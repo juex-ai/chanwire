@@ -3,24 +3,34 @@ package hub
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"github.com/hertz-contrib/websocket"
 	"github.com/juex-ai/chanwire/server/internal/proto"
 )
 
-// WSConn wraps a single WebSocket connection with a write mutex.
+// WSConn wraps a single WebSocket connection. Writes are serialised by mu;
+// the closed flag (also under mu) lets late deliveries from the hub be
+// dropped safely once the connection's hijack handler is on its way out.
 type WSConn struct {
-	mu   sync.Mutex
-	conn *websocket.Conn
+	mu     sync.Mutex
+	conn   *websocket.Conn
+	closed bool
 }
+
+// errClosed is returned by WriteFrame when the connection has been Closed.
+var errClosed = errors.New("ws conn closed")
 
 // NewWSConn wraps a websocket.Conn.
 func NewWSConn(c *websocket.Conn) *WSConn {
 	return &WSConn{conn: c}
 }
 
-// WriteFrame serialises frame as JSON and sends it as a single WebSocket text message.
+// WriteFrame serialises frame as JSON and sends it as a single WebSocket text
+// message. If Close has been called it returns errClosed without touching the
+// underlying connection — important to avoid racing the Hertz engine when it
+// recycles the hijacked connection after the WS handler returns.
 func (w *WSConn) WriteFrame(f proto.Frame) error {
 	b, err := json.Marshal(f)
 	if err != nil {
@@ -28,7 +38,21 @@ func (w *WSConn) WriteFrame(f proto.Frame) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.closed {
+		return errClosed
+	}
 	return w.conn.WriteMessage(websocket.TextMessage, b)
+}
+
+// Close marks the connection as closed so subsequent WriteFrame calls become
+// no-ops. It does NOT close the underlying websocket.Conn; the Hertz hijack
+// handler is responsible for that lifecycle. This MUST be called before the
+// hijack handler returns so the hub's references stop touching the underlying
+// connection before the engine recycles it.
+func (w *WSConn) Close() {
+	w.mu.Lock()
+	w.closed = true
+	w.mu.Unlock()
 }
 
 // Hub manages all live WebSocket connections, keyed by agent ID.
