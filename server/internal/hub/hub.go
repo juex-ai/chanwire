@@ -1,0 +1,81 @@
+// Package hub implements the in-memory message hub and WebSocket connection wrapper.
+package hub
+
+import (
+	"encoding/json"
+	"sync"
+
+	"github.com/hertz-contrib/websocket"
+	"github.com/juex-ai/chanwire/server/internal/proto"
+)
+
+// WSConn wraps a single WebSocket connection with a write mutex.
+type WSConn struct {
+	mu   sync.Mutex
+	conn *websocket.Conn
+}
+
+// NewWSConn wraps a websocket.Conn.
+func NewWSConn(c *websocket.Conn) *WSConn {
+	return &WSConn{conn: c}
+}
+
+// WriteFrame serialises frame as JSON and sends it as a single WebSocket text message.
+func (w *WSConn) WriteFrame(f proto.Frame) error {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return err
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.conn.WriteMessage(websocket.TextMessage, b)
+}
+
+// Hub manages all live WebSocket connections, keyed by agent ID.
+type Hub struct {
+	mu    sync.RWMutex
+	conns map[int64][]*WSConn
+}
+
+// New creates an empty Hub.
+func New() *Hub {
+	return &Hub{conns: make(map[int64][]*WSConn)}
+}
+
+// Register adds conn to the set of connections for agentID.
+func (h *Hub) Register(agentID int64, conn *WSConn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.conns[agentID] = append(h.conns[agentID], conn)
+}
+
+// Unregister removes conn from the set for agentID.
+func (h *Hub) Unregister(agentID int64, conn *WSConn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	conns := h.conns[agentID]
+	updated := conns[:0]
+	for _, c := range conns {
+		if c != conn {
+			updated = append(updated, c)
+		}
+	}
+	if len(updated) == 0 {
+		delete(h.conns, agentID)
+	} else {
+		h.conns[agentID] = updated
+	}
+}
+
+// Deliver sends frame to all live connections for agentID.
+// Connections that fail are silently skipped (they will clean up on disconnect).
+func (h *Hub) Deliver(agentID int64, frame proto.Frame) {
+	h.mu.RLock()
+	conns := make([]*WSConn, len(h.conns[agentID]))
+	copy(conns, h.conns[agentID])
+	h.mu.RUnlock()
+
+	for _, c := range conns {
+		_ = c.WriteFrame(frame)
+	}
+}
