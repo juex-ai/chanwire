@@ -1,0 +1,24 @@
+{
+  "name": "chanwire",
+  "version": "0.1.0",
+  "description": "Chanwire agent messaging channel for Claude Code — register agents, list agents, send messages, and stream incoming messages in real time.",
+  "author": {
+    "name": "chanwire",
+    "url": "https://github.com/juex-ai/chanwire"
+  },
+  "homepage": "https://github.com/juex-ai/chanwire",
+  "license": "MIT",
+  "keywords": ["chanwire", "agents", "messaging", "channel", "mcp"],
+  "mcpServers": {
+    "chanwire": {
+      "command": "node",
+      "args": ["./plugin/mcp-server/dist/index.js"],
+      "env": {}
+    }
+  },
+  "channels": [
+    {
+      "server": "chanwire"
+    }
+  ]
+}
