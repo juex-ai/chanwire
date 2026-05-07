@@ -1,0 +1,25 @@
+# Go
+*.exe
+*.test
+*.out
+
+# Build artifacts
+bin/
+
+# Local dev
+.env
+.env.local
+.log/
+data/
+
+# CLI working dir (when CHANWIRE_DIR is repo-local)
+.chanwire/
+
+# IDE / agent harness (local, machine-specific)
+.vscode/
+.idea/
+.claude/
+.agents/
+
+# OS
+.DS_Store
