@@ -8,7 +8,7 @@ cd "$REPO_ROOT"
 
 mkdir -p "$HOME/.local/bin"
 
-cp bin/chanwire "$HOME/.local/bin/chanwire"
+install -m 0755 bin/chanwire "$HOME/.local/bin/chanwire"
 
 echo "installed: $HOME/.local/bin/chanwire"
 echo "run 'chanwire version' to verify"
