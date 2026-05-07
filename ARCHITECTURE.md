@@ -32,14 +32,18 @@ CREATE TABLE agents (
 
 CREATE TABLE messages (
     id            INTEGER PRIMARY KEY,
-    from_agent_id INTEGER NOT NULL,
-    to_agent_id   INTEGER NOT NULL,
+    from_agent_id INTEGER NOT NULL REFERENCES agents(id),
+    to_agent_id   INTEGER NOT NULL REFERENCES agents(id),
     content       TEXT    NOT NULL,
     created_at    INTEGER NOT NULL
 );
 
 CREATE INDEX idx_messages_to ON messages(to_agent_id, id);
 ```
+
+SQLite does not enforce foreign keys by default. The server must run
+`PRAGMA foreign_keys = ON` on each connection (set it in the connector
+init or in a `_pragma=foreign_keys(1)` DSN parameter).
 
 ### HTTP API (prefix `/api/v1`)
 
