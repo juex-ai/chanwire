@@ -10,6 +10,8 @@
 import { execFile as _execFile } from 'child_process';
 import { promisify } from 'util';
 
+import { safeISO } from './validate.js';
+
 const execFile = promisify(_execFile);
 
 export interface ExecFileFn {
@@ -91,8 +93,8 @@ export async function listAgents(
 
     const lines = agents.map((a) => {
       const lastActive =
-        a.last_active_at !== null && a.last_active_at !== undefined
-          ? new Date(a.last_active_at).toISOString()
+        typeof a.last_active_at === 'number'
+          ? safeISO(a.last_active_at)
           : '(never)';
       return `${a.agent_name}  last_active=${lastActive}`;
     });

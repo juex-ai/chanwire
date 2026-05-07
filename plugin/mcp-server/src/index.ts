@@ -23,11 +23,21 @@ import {
 
 import { registerAgent, listAgents, sendMsg } from './tools.js';
 import { ConnectManager } from './connect.js';
+import { requireString } from './validate.js';
 
 const log = console.error;
 
-// Exit cleanly on broken pipe (parent disconnected)
-process.stderr.on('error', () => { process.exit(0); });
+// Exit cleanly on broken pipe (parent disconnected). Cover both stdout (the
+// JSON-RPC transport) and stderr (logging) — a write error on either is
+// terminal.
+function onStreamError(err: NodeJS.ErrnoException): void {
+  if (err.code === 'EPIPE') {
+    process.exit(0);
+  }
+  process.exit(1);
+}
+process.stdout.on('error', onStreamError);
+process.stderr.on('error', onStreamError);
 
 const mcp = new Server(
   { name: 'chanwire', version: '0.1.0' },
@@ -51,6 +61,10 @@ Incoming messages from other agents arrive as <channel source="chanwire" event_t
 - Messages stream automatically once registered; no polling needed.`,
   },
 );
+
+// Created here so request handlers below can refer to it; actually started
+// from the `oninitialized` callback once the MCP handshake has completed.
+const connectMgr = new ConnectManager(mcp);
 
 // ── Tool: list ────────────────────────────────────────────────────────────────
 
@@ -102,16 +116,31 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 // ── Tool: call ────────────────────────────────────────────────────────────────
 
+/** A tool result text starting with "error:" indicates the underlying CLI failed. */
+function isErrorResult(text: string): boolean {
+  return text.startsWith('error:');
+}
+
 mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  const safeArgs = (args ?? {}) as Record<string, unknown>;
 
   switch (name) {
     case 'chanwire_register_agent': {
-      const agentName = safeArgs.agent_name as string;
+      let agentName: string;
+      try {
+        agentName = requireString(args, 'agent_name');
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `error: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
       const result = await registerAgent(agentName);
-      // After registering, unblock the connect subprocess so messages stream.
-      connectMgr.reset();
+      // Only unblock the connect subprocess when registration succeeded —
+      // a failed CLI call should NOT trigger a respawn.
+      if (!isErrorResult(result.text)) {
+        connectMgr.reset();
+      }
       return { content: [result] };
     }
 
@@ -121,8 +150,17 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case 'chanwire_send_msg': {
-      const toAgent = safeArgs.to_agent as string;
-      const content = safeArgs.content as string;
+      let toAgent: string;
+      let content: string;
+      try {
+        toAgent = requireString(args, 'to_agent');
+        content = requireString(args, 'content');
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: `error: ${(err as Error).message}` }],
+          isError: true,
+        };
+      }
       const result = await sendMsg(toAgent, content);
       return { content: [result] };
     }
@@ -143,14 +181,16 @@ mcp.onerror = (error) => {
 
 // ── Startup ───────────────────────────────────────────────────────────────────
 
+// Hook into the MCP `initialized` notification — the deterministic signal
+// that the client has finished the handshake and is ready to receive
+// notifications. This replaces the ad-hoc setTimeout we used before.
+mcp.oninitialized = () => {
+  log('[chanwire] client initialized — starting connect subprocess');
+  connectMgr.start();
+};
+
 await mcp.connect(new StdioServerTransport());
 log('[chanwire] MCP server connected via stdio');
-
-// Allow Claude Code to register the channel listener before we push anything.
-await new Promise<void>((resolve) => setTimeout(resolve, 3000));
-
-const connectMgr = new ConnectManager(mcp);
-connectMgr.start();
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────
 
