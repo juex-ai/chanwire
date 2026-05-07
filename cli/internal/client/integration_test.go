@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +46,29 @@ func TestRegister(t *testing.T) {
 	}
 	if resp.Token != "test-token" {
 		t.Errorf("token: got %q want %q", resp.Token, "test-token")
+	}
+}
+
+// TestRegisterTrailingSlash verifies that a base URL with a trailing slash
+// is normalized — no double slash in the request path.
+func TestRegisterTrailingSlash(t *testing.T) {
+	gotPath := ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"agent_name": "alice",
+			"token":      "tok",
+		})
+	}))
+	defer srv.Close()
+
+	hc := client.NewHTTP(srv.URL+"/", "")
+	if _, err := hc.Register("alice"); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if gotPath != "/api/v1/agent/register" {
+		t.Errorf("path: got %q want %q", gotPath, "/api/v1/agent/register")
 	}
 }
 
@@ -142,11 +167,15 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// sentAt is a helper to create a pointer to an int64.
-func sentAtPtr(v int64) *int64 { return &v }
+// noWait is a Waiter that returns immediately, respecting ctx cancellation.
+func noWait(ctx context.Context, _ time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return nil
+}
 
 func TestWSFrames(t *testing.T) {
-	// Build frames that the server will push.
 	type Frame struct {
 		Type      string `json:"type"`
 		MessageID *int64 `json:"message_id,omitempty"`
@@ -181,29 +210,23 @@ func TestWSFrames(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	var buf strings.Builder
+	// bufWriter is goroutine-safe; the watcher goroutine in runOnce may
+	// outrace the read loop in some edge cases, so guard concurrent writes.
+	buf := &syncBuffer{}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	// Use a no-sleep sleep function and a short context.
-	noSleep := func(d time.Duration) {
-		// Don't actually sleep in tests.
-	}
+	wsc := client.NewWS(srv.URL, "test-token", noWait)
 
-	wsc := client.NewWS(srv.URL, "test-token", noSleep)
-
-	// Run ConnectWithReset — it will reconnect after close, but context
-	// cancels it quickly.
 	go func() {
 		// Cancel after giving the client enough time to read frames.
 		time.Sleep(200 * time.Millisecond)
 		cancel()
 	}()
-	wsc.ConnectWithReset(ctx, &buf)
+	wsc.ConnectWithReset(ctx, buf)
 
 	output := buf.String()
 
-	// Check all four expected output lines.
 	t1 := time.UnixMilli(ts1).UTC().Format("2006-01-02 15:04:05")
 	t2 := time.UnixMilli(ts2).UTC().Format("2006-01-02 15:04:05")
 
@@ -220,11 +243,28 @@ func TestWSFrames(t *testing.T) {
 	}
 }
 
-// ── Reconnect test with fake backoff / sleep ──────────────────────────────────
+// syncBuffer is a goroutine-safe bytes accumulator used in WS tests.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// ── Reconnect test with fake waiter ───────────────────────────────────────────
 
 func TestWSReconnect(t *testing.T) {
-	// Count how many times the server receives a connection.
-	connCount := 0
+	var connCount atomic.Int32
 	done := make(chan struct{})
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -232,10 +272,9 @@ func TestWSReconnect(t *testing.T) {
 		if err != nil {
 			return
 		}
-		connCount++
-		// Close immediately after first connection to force a reconnect.
+		// Close immediately after handshake to force a reconnect.
 		conn.Close()
-		if connCount >= 2 {
+		if connCount.Add(1) >= 2 {
 			select {
 			case done <- struct{}{}:
 			default:
@@ -244,20 +283,29 @@ func TestWSReconnect(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Track sleep calls to verify backoff is triggered.
-	sleepCalls := []time.Duration{}
-	fakeSleep := func(d time.Duration) {
-		sleepCalls = append(sleepCalls, d)
+	// Track waiter calls under a mutex.
+	var (
+		waitMu     sync.Mutex
+		waitCalls  []time.Duration
+	)
+	fakeWait := func(ctx context.Context, d time.Duration) error {
+		waitMu.Lock()
+		waitCalls = append(waitCalls, d)
+		waitMu.Unlock()
+		// Honour ctx cancellation but otherwise return immediately.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	var buf strings.Builder
-	wsc := client.NewWS(srv.URL, "test-token", fakeSleep)
+	buf := &syncBuffer{}
+	wsc := client.NewWS(srv.URL, "test-token", fakeWait)
 
 	go func() {
-		// Wait until we've seen 2 connections then cancel.
 		select {
 		case <-done:
 		case <-ctx.Done():
@@ -265,16 +313,17 @@ func TestWSReconnect(t *testing.T) {
 		cancel()
 	}()
 
-	wsc.ConnectWithReset(ctx, &buf)
+	wsc.ConnectWithReset(ctx, buf)
 
-	// Verify that at least one sleep/reconnect happened.
-	if len(sleepCalls) == 0 {
-		t.Error("expected at least one sleep call for reconnect, got zero")
+	waitMu.Lock()
+	defer waitMu.Unlock()
+
+	if len(waitCalls) == 0 {
+		t.Fatal("expected at least one wait call for reconnect, got zero")
 	}
 
-	// After a successful connect the backoff resets to 1s.
-	// First sleep after reconnect should be 1s (reset happened).
-	if len(sleepCalls) > 0 && sleepCalls[0] != 1*time.Second {
-		t.Errorf("first sleep after reconnect: got %v want 1s (reset)", sleepCalls[0])
+	// First wait after a successful 101 handshake must be 1s (backoff reset).
+	if waitCalls[0] != 1*time.Second {
+		t.Errorf("first wait after handshake: got %v want 1s (reset)", waitCalls[0])
 	}
 }

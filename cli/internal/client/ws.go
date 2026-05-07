@@ -22,48 +22,54 @@ type Frame struct {
 	SentAt    *int64 `json:"sent_at,omitempty"`
 }
 
-// SleepFunc is the function used to sleep between reconnect attempts.
-// Replaced in tests to avoid real waits.
-type SleepFunc func(d time.Duration)
+// Waiter blocks for the requested duration or until ctx is cancelled.
+// It returns ctx.Err() if cancelled, otherwise nil. Replaced in tests
+// to avoid real waits.
+type Waiter func(ctx context.Context, d time.Duration) error
+
+// defaultWaiter sleeps using a real timer that respects ctx cancellation.
+func defaultWaiter(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
 
 // WSClient manages a persistent WebSocket connection to the server.
 type WSClient struct {
 	baseURL string
 	token   string
-	sleep   SleepFunc
+	wait    Waiter
 	dialer  *websocket.Dialer
 }
 
-// NewWS creates a new WSClient. Pass nil sleepFn to use the default (time.Sleep).
-func NewWS(baseURL, token string, sleepFn SleepFunc) *WSClient {
-	fn := sleepFn
+// NewWS creates a new WSClient. Pass nil waitFn to use the default
+// (a context-aware time.NewTimer-based wait).
+func NewWS(baseURL, token string, waitFn Waiter) *WSClient {
+	fn := waitFn
 	if fn == nil {
-		fn = time.Sleep
+		fn = defaultWaiter
 	}
 	return &WSClient{
 		baseURL: baseURL,
 		token:   token,
-		sleep:   fn,
+		wait:    fn,
 		dialer:  websocket.DefaultDialer,
 	}
 }
 
 // wsURL converts an http(s) base URL to a ws(s) URL for /api/v1/ws.
+// A trailing slash on base is stripped to avoid producing "//api/v1/ws".
 func wsURL(base string) string {
+	base = strings.TrimSuffix(base, "/")
 	if strings.HasPrefix(base, "https://") {
 		return "wss://" + strings.TrimPrefix(base, "https://") + "/api/v1/ws"
 	}
 	return "ws://" + strings.TrimPrefix(base, "http://") + "/api/v1/ws"
-}
-
-// sleepCh returns a channel that closes after the sleep function returns.
-func sleepCh(fn SleepFunc, d time.Duration) <-chan struct{} {
-	ch := make(chan struct{})
-	go func() {
-		fn(d)
-		close(ch)
-	}()
-	return ch
 }
 
 // connResetError is returned by runOnce when the WebSocket handshake
@@ -78,12 +84,15 @@ func (e *connResetError) Error() string {
 	return e.cause.Error()
 }
 
-// runOnce dials once and runs the read loop.
-//   - Returns *connResetError when the handshake succeeded but the session ended
-//     (caller should reset backoff — spec: "reset to the start of the sequence
-//     on a successful WS handshake (101)").
-//   - Returns a plain error when the dial itself failed (no reset).
-//   - Returns nil when ctx is cancelled (caller should stop).
+// runOnce dials once and runs the read loop. Return-value paths:
+//   - Dial fails with no response: returns the wrapped dial error.
+//   - Dial fails with an HTTP response: returns a non-nil error reporting
+//     the status code (no reset).
+//   - Handshake succeeds and the session later ends: returns *connResetError
+//     (caller should reset backoff per spec: "reset to the start of the
+//     sequence on a successful WS handshake (101)").
+//   - Handshake succeeds and ctx is cancelled before/while reading:
+//     returns nil (clean shutdown).
 func (c *WSClient) runOnce(ctx context.Context, url string, w io.Writer) error {
 	hdr := http.Header{}
 	hdr.Set("Authorization", "Bearer "+c.token)
@@ -97,20 +106,30 @@ func (c *WSClient) runOnce(ctx context.Context, url string, w io.Writer) error {
 	}
 	defer conn.Close()
 
-	// Handshake succeeded — return via connResetError so the caller resets.
+	// conn.ReadMessage blocks and does not natively respect ctx.
+	// Force-close the connection on ctx.Done so the reader unblocks.
+	// stop is closed when readLoop returns so this watcher exits cleanly.
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-stop:
+		}
+	}()
+
 	return c.readLoop(ctx, conn, w)
 }
 
 func (c *WSClient) readLoop(ctx context.Context, conn *websocket.Conn, w io.Writer) error {
 	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-		}
-
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
+			// If ctx is done, treat the error as a clean shutdown.
+			if ctx.Err() != nil {
+				return nil
+			}
 			return &connResetError{cause: err}
 		}
 
@@ -153,10 +172,8 @@ func (c *WSClient) ConnectWithReset(ctx context.Context, w io.Writer) error {
 	url := wsURL(c.baseURL)
 
 	for {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return ctx.Err()
-		default:
 		}
 
 		err := c.runOnce(ctx, url, w)
@@ -173,10 +190,10 @@ func (c *WSClient) ConnectWithReset(ctx context.Context, w io.Writer) error {
 
 		delay := bo.Next()
 
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-sleepCh(c.sleep, delay):
+		// Wait for delay or ctx — c.wait returns early if ctx is cancelled,
+		// so the reconnect goroutine for the timer is always cleaned up.
+		if werr := c.wait(ctx, delay); werr != nil {
+			return werr
 		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -17,10 +18,11 @@ type HTTPClient struct {
 	client *http.Client
 }
 
-// NewHTTP returns a new HTTPClient.
+// NewHTTP returns a new HTTPClient. A trailing slash on baseURL is
+// stripped so concatenation with "/api/v1/..." produces a clean path.
 func NewHTTP(baseURL, token string) *HTTPClient {
 	return &HTTPClient{
-		base:  baseURL,
+		base:  strings.TrimSuffix(baseURL, "/"),
 		token: token,
 		client: &http.Client{
 			Timeout: 15 * time.Second,
