@@ -1,0 +1,25 @@
+{
+  "name": "@chanwire/mcp-server",
+  "version": "0.1.0",
+  "description": "Chanwire MCP server for Claude Code plugin",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/tools.test.js dist/validate.test.js",
+    "test:src": "node --experimental-strip-types --test src/tools.test.ts src/validate.test.ts",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": ["chanwire", "mcp", "agents", "messaging"],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}
