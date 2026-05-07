@@ -11,8 +11,11 @@ import (
 	"github.com/juex-ai/chanwire/server/internal/store"
 )
 
-// ContextKey is the key used to store the authenticated agent ID in the request context.
-const ContextKey = "agent_id"
+// Context keys for the authenticated agent.
+const (
+	ContextKey     = "agent_id"
+	ContextNameKey = "agent_name"
+)
 
 // Middleware returns a Hertz handler that validates the Bearer token, injects
 // the agent ID into the request context, and updates last_active_at.
@@ -45,6 +48,7 @@ func Middleware(s *store.Store) app.HandlerFunc {
 		_ = s.UpdateLastActive(c, agent.ID)
 
 		ctx.Set(ContextKey, agent.ID)
+		ctx.Set(ContextNameKey, agent.Name)
 		ctx.Next(c)
 	}
 }
@@ -58,6 +62,17 @@ func GetAgentID(ctx *app.RequestContext) int64 {
 	}
 	id, _ := v.(int64)
 	return id
+}
+
+// GetAgentName extracts the authenticated agent name from the request context.
+// Returns "" if not present.
+func GetAgentName(ctx *app.RequestContext) string {
+	v, exists := ctx.Get(ContextNameKey)
+	if !exists {
+		return ""
+	}
+	name, _ := v.(string)
+	return name
 }
 
 // parseBearerToken extracts the token from "Bearer <token>".

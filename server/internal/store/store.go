@@ -27,16 +27,19 @@ func Open(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
-	dsn := dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)"
+	// The "file:" URI scheme is required for modernc.org/sqlite to parse
+	// the query parameters (otherwise the whole DSN — pragmas included —
+	// is treated as a literal filename). Pragmas are then applied on every
+	// connection in the pool.
+	dsn := "file:" + dbPath + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Each connection needs these pragmas. Using SetMaxOpenConns(1) is the
-	// simplest way to guarantee WAL and FK are always in effect without a
-	// ConnectHook.
-	db.SetMaxOpenConns(1)
+	// Cap the pool to a sane bound. WAL allows multiple concurrent readers
+	// alongside one writer; SQLite serialises writes itself.
+	db.SetMaxOpenConns(8)
 
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
@@ -48,12 +51,17 @@ func Open(dbPath string) (*Store, error) {
 
 // OpenMemory opens an in-memory SQLite database for testing.
 func OpenMemory() (*Store, error) {
-	// Use a URI with shared cache so multiple Open calls get the same DB.
+	// Use a URI with shared cache so multiple connections from the pool
+	// see the same database. Note: in-memory databases do not actually
+	// switch into WAL mode (SQLite ignores journal_mode for :memory:), so
+	// only verify the FK pragma in tests against this connector.
 	dsn := "file::memory:?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&cache=shared"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite memory: %w", err)
 	}
+	// In-memory + shared cache requires a single connection to keep
+	// every query targeting the same instance.
 	db.SetMaxOpenConns(1)
 
 	s := &Store{db: db}
@@ -62,6 +70,24 @@ func OpenMemory() (*Store, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return s, nil
+}
+
+// PragmaInt returns the integer value of a SQLite pragma (e.g., "foreign_keys").
+func (s *Store) PragmaInt(ctx context.Context, name string) (int, error) {
+	var v int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA "+name).Scan(&v); err != nil {
+		return 0, err
+	}
+	return v, nil
+}
+
+// PragmaString returns the string value of a SQLite pragma (e.g., "journal_mode").
+func (s *Store) PragmaString(ctx context.Context, name string) (string, error) {
+	var v string
+	if err := s.db.QueryRowContext(ctx, "PRAGMA "+name).Scan(&v); err != nil {
+		return "", err
+	}
+	return v, nil
 }
 
 // Close closes the underlying database.
@@ -228,8 +254,10 @@ type Message struct {
 	CreatedAt   int64
 }
 
-// InsertMessage persists a new message and returns it.
-func (s *Store) InsertMessage(ctx context.Context, fromAgentID, toAgentID int64, content string) (*Message, error) {
+// InsertMessage persists a new message and returns it. The caller passes the
+// already-known sender name (resolved by the auth middleware) so this is a
+// single-query write — no extra SELECT for the sender name on the hot path.
+func (s *Store) InsertMessage(ctx context.Context, fromAgentID int64, fromAgentName string, toAgentID int64, content string) (*Message, error) {
 	now := nowMillis()
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO messages (from_agent_id, to_agent_id, content, created_at) VALUES (?, ?, ?, ?)`,
@@ -243,16 +271,10 @@ func (s *Store) InsertMessage(ctx context.Context, fromAgentID, toAgentID int64,
 		return nil, fmt.Errorf("last insert id: %w", err)
 	}
 
-	// Fetch from_agent name.
-	agent, err := s.getAgentByID(ctx, fromAgentID)
-	if err != nil {
-		return nil, fmt.Errorf("lookup from_agent: %w", err)
-	}
-
 	return &Message{
 		ID:          id,
 		FromAgentID: fromAgentID,
-		FromAgent:   agent.Name,
+		FromAgent:   fromAgentName,
 		ToAgentID:   toAgentID,
 		Content:     content,
 		CreatedAt:   now,
@@ -285,10 +307,3 @@ func (s *Store) GetMessagesForAgent(ctx context.Context, toAgentID int64) ([]Mes
 	return msgs, rows.Err()
 }
 
-func (s *Store) getAgentByID(ctx context.Context, id int64) (*Agent, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, token, last_active_at, created_at FROM agents WHERE id = ?`,
-		id,
-	)
-	return scanAgent(row)
-}

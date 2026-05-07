@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	hserver "github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/juex-ai/chanwire/server/internal/auth"
@@ -53,14 +54,16 @@ func main() {
 	api.POST("/msg/send", authMW, handlers.MsgSend(s, h))
 	api.GET("/ws", authMW, handlers.WSConnect(s, h))
 
-	// Graceful shutdown on SIGINT/SIGTERM.
+	// Graceful shutdown on SIGINT/SIGTERM, bounded by a 10s deadline so a
+	// stuck connection or slow DB cannot hang the process forever.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-quit
 		fmt.Println("shutting down...")
-		ctx := context.Background()
-		srv.Shutdown(ctx) //nolint:errcheck
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutCtx)
 	}()
 
 	srv.Spin()

@@ -15,7 +15,10 @@ import (
 // MsgSend handles POST /api/v1/msg/send.
 func MsgSend(s *store.Store, h *hub.Hub) app.HandlerFunc {
 	return func(c context.Context, ctx *app.RequestContext) {
+		// Sender ID and name are already known from the auth middleware,
+		// so we don't need an extra SELECT to resolve the sender's name.
 		fromAgentID := auth.GetAgentID(ctx)
+		fromAgentName := auth.GetAgentName(ctx)
 
 		var req proto.SendRequest
 		if err := ctx.BindJSON(&req); err != nil {
@@ -43,7 +46,7 @@ func MsgSend(s *store.Store, h *hub.Hub) app.HandlerFunc {
 			return
 		}
 
-		msg, err := s.InsertMessage(c, fromAgentID, toAgent.ID, req.Content)
+		msg, err := s.InsertMessage(c, fromAgentID, fromAgentName, toAgent.ID, req.Content)
 		if err != nil {
 			ctx.JSON(consts.StatusInternalServerError, proto.ErrorResponse{Error: "internal error"})
 			return
