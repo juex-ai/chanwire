@@ -1,0 +1,6 @@
+[tools]
+node = "24"
+
+[env]
+TASKLINE_PROJECT = "chanwire"
+TASKLINE_SERVER = "http://mini4.nb.hi:8787"
