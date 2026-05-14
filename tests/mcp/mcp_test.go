@@ -25,7 +25,7 @@ func TestMCPFlow(t *testing.T) {
 	alice := "mcp-alice-" + suffix
 	bob := "mcp-bob-" + suffix
 	bobToAliceContent := "mcp bob to alice " + suffix
-	aliceToBobContent := "mcp alice to bob " + suffix
+	aliceToBobContent := "mcp alice to bob line 1\nline 2 " + suffix
 
 	aliceToken := e2e.RegisterAgent(t, endpoint, alice)
 	aliceConn := e2e.DialWS(t, endpoint, aliceToken)

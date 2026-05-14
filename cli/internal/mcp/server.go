@@ -19,8 +19,6 @@ import (
 	"github.com/juex-ai/chanwire/cli/internal/store"
 )
 
-const notRegisteredMarker = "not registered. run:"
-
 // Server holds the state for our MCP server
 type Server struct {
 	mcpServer    *mcp.Server
@@ -371,14 +369,10 @@ func (s *Server) runConnectOnce(ctx context.Context) {
 		return
 	}
 
-	lineWriter := &lineWriter{
-		server: s,
-	}
-
 	wsc := client.NewWS(config.Endpoint(), info.Token, nil)
 	s.log("starting ws connect")
 
-	if err := wsc.ConnectWithReset(ctx, lineWriter); err != nil {
+	if err := wsc.ConnectFramesWithReset(ctx, s.handleFrame); err != nil {
 		if ctx.Err() == nil {
 			s.log("connect exited unexpectedly: %v", err)
 		}
@@ -397,19 +391,16 @@ func (s *Server) setBlocked() {
 	)
 }
 
-// handleLine handles a single line from the WebSocket connection
-func (s *Server) handleLine(line string) {
-	trimmed := trimSpace(line)
-	if trimmed == "" {
-		return
+// handleFrame forwards decoded WebSocket frames to the MCP client.
+func (s *Server) handleFrame(frame *client.Frame) {
+	switch frame.Type {
+	case "history":
+		s.sendChannelNotification(formatFrame("history", frame), "message")
+	case "realtime":
+		s.sendChannelNotification(formatFrame("realtime", frame), "message")
+	case "history_done":
+		s.sendChannelNotification("-- end of history --", "message")
 	}
-
-	if contains(trimmed, notRegisteredMarker) {
-		s.setBlocked()
-		return
-	}
-
-	s.sendChannelNotification(trimmed, "message")
 }
 
 // sendChannelNotification sends a notification to the client
@@ -437,40 +428,27 @@ func (s *Server) log(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "[chanwire] "+format+"\n", args...)
 }
 
-// lineWriter is a writer that calls handleLine for each line
-type lineWriter struct {
-	server *Server
-	buf    []byte
-}
-
-func (lw *lineWriter) Write(p []byte) (n int, err error) {
-	n = len(p)
-	for i := 0; i < len(p); i++ {
-		if p[i] == '\n' {
-			line := string(lw.buf)
-			lw.buf = lw.buf[:0]
-			lw.server.handleLine(line)
-		} else {
-			lw.buf = append(lw.buf, p[i])
-		}
-	}
-	return n, nil
-}
-
 // Helper functions
 func safeISO(ms int64) string {
 	t := time.UnixMilli(ms)
 	return t.UTC().Format(time.RFC3339)
 }
 
+func formatFrame(kind string, frame *client.Frame) string {
+	label := "[history] "
+	if kind == "realtime" {
+		label = "[realtime]"
+	}
+	return fmt.Sprintf("%s from %s at %s: %s", label, frame.FromAgent, safeFrameTS(frame.SentAt), frame.Content)
+}
+
+func safeFrameTS(ms *int64) string {
+	if ms == nil {
+		return "(unknown)"
+	}
+	return time.UnixMilli(*ms).UTC().Format("2006-01-02 15:04:05")
+}
+
 func join(lines []string, sep string) string {
 	return strings.Join(lines, sep)
-}
-
-func trimSpace(s string) string {
-	return strings.TrimSpace(s)
-}
-
-func contains(s, substr string) bool {
-	return strings.Contains(s, substr)
 }
