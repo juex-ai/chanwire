@@ -166,7 +166,7 @@ func agentRegisterCmd() *cobra.Command {
 			}
 
 			if format == "json" {
-				return writeJSON(cmd.OutOrStdout(), map[string]string{"agent_name": resp.AgentName})
+				return writeJSON(cmd.OutOrStdout(), resp)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "registered: agent_name=%s\n", resp.AgentName)
 			return nil
@@ -236,6 +236,7 @@ func agentListCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit one line of JSON instead of the table")
+	_ = cmd.Flags().MarkDeprecated("json", "use --format json instead")
 	cmd.Flags().StringVar(&format, "format", "table", "Output format: table|json")
 	return cmd
 }
@@ -349,6 +350,7 @@ func validateFormat(format string, allowed ...string) error {
 
 func writeJSON(out io.Writer, v any) error {
 	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
 		return fmt.Errorf("encoding JSON: %w", err)
 	}

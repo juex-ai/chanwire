@@ -221,12 +221,16 @@ func TestAgentRegisterJSON(t *testing.T) {
 	}
 	var got struct {
 		AgentName string `json:"agent_name"`
+		Token     string `json:"token"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
 		t.Fatalf("register JSON: %v\n%s", err, stdout)
 	}
 	if got.AgentName != "alice" {
 		t.Fatalf("agent_name: got %q want alice", got.AgentName)
+	}
+	if got.Token != "tok" {
+		t.Fatalf("token: got %q want tok", got.Token)
 	}
 }
 
@@ -333,7 +337,8 @@ func TestMsgSendJSON(t *testing.T) {
 	}
 }
 
-// TestAgentListJSON verifies --json emits a single line of valid JSON.
+// TestAgentListJSON verifies legacy --json still emits valid JSON after the
+// deprecation warning.
 func TestAgentListJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -352,10 +357,13 @@ func TestAgentListJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent list --json: %v", err)
 	}
-	// Expect exactly one trailing newline → one line of content.
 	trimmed := strings.TrimRight(stdout, "\n")
-	if strings.Contains(trimmed, "\n") {
-		t.Errorf("expected single-line JSON, got multi-line:\n%s", stdout)
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected deprecation warning plus JSON, got:\n%s", stdout)
+	}
+	if !strings.Contains(lines[0], "deprecated") {
+		t.Fatalf("expected deprecation warning, got:\n%s", stdout)
 	}
 	// Output must be valid JSON with the expected shape.
 	var parsed struct {
@@ -364,8 +372,8 @@ func TestAgentListJSON(t *testing.T) {
 			LastActiveAt *int64 `json:"last_active_at"`
 		} `json:"agents"`
 	}
-	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
-		t.Fatalf("not valid JSON: %v\noutput: %s", err, trimmed)
+	if err := json.Unmarshal([]byte(lines[1]), &parsed); err != nil {
+		t.Fatalf("not valid JSON: %v\noutput: %s", err, lines[1])
 	}
 	if len(parsed.Agents) != 2 {
 		t.Errorf("expected 2 agents, got %d", len(parsed.Agents))
@@ -393,12 +401,16 @@ func TestAgentListFormatJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent list --format json: %v", err)
 	}
+	trimmed := strings.TrimRight(stdout, "\n")
+	if strings.Contains(trimmed, "\n") {
+		t.Fatalf("expected single-line JSON, got multi-line:\n%s", stdout)
+	}
 	var parsed struct {
 		Agents []struct {
 			AgentName string `json:"agent_name"`
 		} `json:"agents"`
 	}
-	if err := json.Unmarshal([]byte(stdout), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
 		t.Fatalf("not valid JSON: %v\noutput: %s", err, stdout)
 	}
 	if len(parsed.Agents) != 1 || parsed.Agents[0].AgentName != "alice" {
