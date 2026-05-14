@@ -83,6 +83,17 @@ func Dir() string {
 	return dir
 }
 
+// DirSource returns which input selected the active config directory.
+func DirSource() string {
+	if homeDirConfigured {
+		return "flag"
+	}
+	if os.Getenv("CHANWIRE_DIR") != "" {
+		return "env"
+	}
+	return "default"
+}
+
 // AgentJSONPath returns the full path to agent.json.
 func AgentJSONPath() string {
 	return filepath.Join(Dir(), "agent.json")

@@ -25,7 +25,7 @@ func runArgs(args ...string) (string, string, error) {
 	return stdout.String(), stderr.String(), err
 }
 
-// TestVersionCommand checks that `chanwire version` runs without error.
+// TestVersionCommand checks that `chanwire version` only prints build metadata.
 func TestVersionCommand(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CHANWIRE_DIR", dir)
@@ -34,33 +34,55 @@ func TestVersionCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version command: %v", err)
 	}
-	// Both endpoint lines must be present.
-	if !strings.Contains(stdout, "endpoint (env):") {
-		t.Errorf("expected 'endpoint (env):' in output, got:\n%s", stdout)
+	if !strings.Contains(stdout, "version:") || !strings.Contains(stdout, "commit:") {
+		t.Errorf("expected version and commit in output, got:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "endpoint (saved):") {
-		t.Errorf("expected 'endpoint (saved):' in output, got:\n%s", stdout)
-	}
-	if !strings.Contains(stdout, "(not registered)") {
-		t.Errorf("expected '(not registered)' for missing agent.json, got:\n%s", stdout)
+	if strings.Contains(stdout, "work_dir") || strings.Contains(stdout, "endpoint") || strings.Contains(stdout, "agent_name") {
+		t.Errorf("version should not print runtime status, got:\n%s", stdout)
 	}
 }
 
-// TestVersionShowsSavedEndpoint checks that a registered agent's saved
-// endpoint is reflected in the version output.
-func TestVersionShowsSavedEndpoint(t *testing.T) {
+func TestStatusShowsRuntimeConfigAndAgentName(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CHANWIRE_DIR", dir)
+	t.Setenv("CHANWIRE_ENDPOINT", "http://status.example:12306")
 
 	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
 	writeAgentJSON(t, agentJSON, "alice", "tok", "http://saved.example:9999")
 
-	stdout, _, err := runArgs("version")
+	stdout, _, err := runArgs("status")
 	if err != nil {
-		t.Fatalf("version command: %v", err)
+		t.Fatalf("status command: %v", err)
 	}
-	if !strings.Contains(stdout, "http://saved.example:9999") {
-		t.Errorf("expected saved endpoint in output, got:\n%s", stdout)
+	wantDir := "work_dir(env):   " + filepath.Join(dir, ".config", "chanwire")
+	for _, want := range []string{
+		"version:",
+		wantDir,
+		"endpoint:        http://status.example:12306",
+		"agent_name:      alice",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "http://saved.example:9999") {
+		t.Errorf("status should not print saved endpoint, got:\n%s", stdout)
+	}
+}
+
+func TestStatusShowsEmptyAgentNameWhenUnregistered(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHANWIRE_DIR", dir)
+
+	stdout, _, err := runArgs("status")
+	if err != nil {
+		t.Fatalf("status command: %v", err)
+	}
+	if !strings.Contains(stdout, "agent_name:") {
+		t.Fatalf("expected agent_name line, got:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "(not registered)") {
+		t.Fatalf("status should use an empty agent name when unregistered, got:\n%s", stdout)
 	}
 }
 
@@ -69,12 +91,12 @@ func TestHomeDirFlagWinsOverEnvAndNormalizes(t *testing.T) {
 	flagRoot := t.TempDir()
 	t.Setenv("CHANWIRE_DIR", envRoot)
 
-	stdout, _, err := runArgs("--homedir", flagRoot, "version")
+	stdout, _, err := runArgs("--homedir", flagRoot, "status")
 	if err != nil {
-		t.Fatalf("version --homedir: %v", err)
+		t.Fatalf("status --homedir: %v", err)
 	}
 
-	want := "CHANWIRE_DIR:     " + filepath.Join(flagRoot, ".config", "chanwire")
+	want := "work_dir(flag):  " + filepath.Join(flagRoot, ".config", "chanwire")
 	if !strings.Contains(stdout, want) {
 		t.Fatalf("expected %q in output, got:\n%s", want, stdout)
 	}
@@ -102,12 +124,12 @@ func TestHomeDirFlagResolvesRelativeFromWorkingDirectory(t *testing.T) {
 		}
 	})
 
-	stdout, _, err := runArgs("--homedir", ".", "version")
+	stdout, _, err := runArgs("--homedir", ".", "status")
 	if err != nil {
-		t.Fatalf("version --homedir .: %v", err)
+		t.Fatalf("status --homedir .: %v", err)
 	}
 
-	want := "CHANWIRE_DIR:     " + filepath.Join(cwd, ".config", "chanwire")
+	want := "work_dir(flag):  " + filepath.Join(cwd, ".config", "chanwire")
 	if !strings.Contains(stdout, want) {
 		t.Fatalf("expected %q in output, got:\n%s", want, stdout)
 	}

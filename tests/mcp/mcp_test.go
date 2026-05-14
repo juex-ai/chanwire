@@ -71,10 +71,19 @@ func TestMCPFlow(t *testing.T) {
 		"chanwire_register_agent",
 		"chanwire_list_agents",
 		"chanwire_send_msg",
+		"chanwire_status",
 	})
 
-	callTool(t, mcp, 3, "chanwire_register_agent", map[string]any{"agent_name": bob})
-	registerResp := mcp.waitResponse(3)
+	callTool(t, mcp, 3, "chanwire_status", map[string]any{})
+	statusResp := mcp.waitResponse(3)
+	assertNoRPCError(t, statusResp)
+	assertToolTextContains(t, statusResp, "version:")
+	assertToolTextContains(t, statusResp, "work_dir(env):")
+	assertToolTextContains(t, statusResp, "endpoint:        "+endpoint)
+	assertToolTextContains(t, statusResp, "agent_name:")
+
+	callTool(t, mcp, 4, "chanwire_register_agent", map[string]any{"agent_name": bob})
+	registerResp := mcp.waitResponse(4)
 	assertNoRPCError(t, registerResp)
 	assertToolTextContains(t, registerResp, "registered: agent_name="+bob)
 
@@ -82,17 +91,22 @@ func TestMCPFlow(t *testing.T) {
 		return params["content"] == "-- end of history --"
 	})
 
-	callTool(t, mcp, 4, "chanwire_list_agents", map[string]any{})
-	listResp := mcp.waitResponse(4)
+	callTool(t, mcp, 5, "chanwire_status", map[string]any{})
+	registeredStatusResp := mcp.waitResponse(5)
+	assertNoRPCError(t, registeredStatusResp)
+	assertToolTextContains(t, registeredStatusResp, "agent_name:      "+bob)
+
+	callTool(t, mcp, 6, "chanwire_list_agents", map[string]any{})
+	listResp := mcp.waitResponse(6)
 	assertNoRPCError(t, listResp)
 	assertToolTextContains(t, listResp, alice)
 	assertToolTextContains(t, listResp, bob)
 
-	callTool(t, mcp, 5, "chanwire_send_msg", map[string]any{
+	callTool(t, mcp, 7, "chanwire_send_msg", map[string]any{
 		"to_agent": alice,
 		"content":  bobToAliceContent,
 	})
-	sendResp := mcp.waitResponse(5)
+	sendResp := mcp.waitResponse(7)
 	assertNoRPCError(t, sendResp)
 	assertToolTextContains(t, sendResp, "ok: message_id=")
 

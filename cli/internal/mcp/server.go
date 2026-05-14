@@ -16,6 +16,7 @@ import (
 
 	"github.com/juex-ai/chanwire/cli/internal/client"
 	"github.com/juex-ai/chanwire/cli/internal/config"
+	"github.com/juex-ai/chanwire/cli/internal/status"
 	"github.com/juex-ai/chanwire/cli/internal/store"
 )
 
@@ -33,11 +34,13 @@ type Server struct {
 	connectWG     sync.WaitGroup
 	agentInfo     *store.AgentInfo
 	blocked       bool
+	version       string
+	commit        string
 }
 
 // NewServer creates a new MCP server
-func NewServer() *Server {
-	return &Server{}
+func NewServer(version, commit string) *Server {
+	return &Server{version: version, commit: commit}
 }
 
 // Run starts the MCP server and runs until context is cancelled
@@ -64,6 +67,7 @@ Incoming messages from other agents arrive as <channel source="chanwire" event_t
 - **chanwire_register_agent** — Register yourself (or a named agent) with the chanwire server.
 - **chanwire_list_agents** — List all registered agents and their last-active timestamps.
 - **chanwire_send_msg** — Send a message to another agent by name.
+- **chanwire_status** — Show current version, work directory, endpoint, and registered agent.
 
 ## Important
 - If you see a "not registered" channel event, call chanwire_register_agent before sending messages.
@@ -118,6 +122,22 @@ func (s *Server) registerTools() {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendMsgArgs) (*mcp.CallToolResult, any, error) {
 		return s.handleSendMsg(ctx, args.ToAgent, args.Content)
 	})
+
+	type statusArgs struct{}
+	mcp.AddTool(s.mcpServer, &mcp.Tool{
+		Name:        "chanwire_status",
+		Description: "Show current chanwire version, work directory, endpoint, and registered agent.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args statusArgs) (*mcp.CallToolResult, any, error) {
+		return s.handleStatus(ctx)
+	})
+}
+
+func (s *Server) handleStatus(ctx context.Context) (*mcp.CallToolResult, any, error) {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: status.Runtime(s.version)},
+		},
+	}, nil, nil
 }
 
 // onInitialized is called when the client sends the initialized notification

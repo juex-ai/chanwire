@@ -16,6 +16,7 @@ import (
 	"github.com/juex-ai/chanwire/cli/internal/client"
 	"github.com/juex-ai/chanwire/cli/internal/config"
 	"github.com/juex-ai/chanwire/cli/internal/mcp"
+	"github.com/juex-ai/chanwire/cli/internal/status"
 	"github.com/juex-ai/chanwire/cli/internal/store"
 )
 
@@ -49,6 +50,7 @@ func rootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&homeDir, "homedir", "", "Base directory for chanwire config; final path is .config/chanwire")
 
 	root.AddCommand(versionCmd())
+	root.AddCommand(statusCmd())
 	root.AddCommand(agentCmd())
 	root.AddCommand(msgCmd())
 	root.AddCommand(connectCmd())
@@ -62,7 +64,7 @@ func mcpCmd() *cobra.Command {
 		Use:   "mcp",
 		Short: "Run the chanwire MCP server (stdio)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			srv := mcp.NewServer()
+			srv := mcp.NewServer(version, commit)
 			return srv.Run(cmd.Context())
 		},
 	}
@@ -76,23 +78,18 @@ func versionCmd() *cobra.Command {
 		Short: "Print version information",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "cli version:      %s\n", version)
-			fmt.Fprintf(out, "git commit:       %s\n", commit)
-			fmt.Fprintf(out, "CHANWIRE_DIR:     %s\n", config.Dir())
-			fmt.Fprintf(out, "endpoint (env):   %s\n", config.Endpoint())
+			fmt.Fprint(out, status.Version(version, commit))
+			return nil
+		},
+	}
+}
 
-			// Saved endpoint is best-effort — print "(not registered)" if
-			// agent.json is missing or unreadable; spec says version is
-			// purely diagnostic and must never fail because of it.
-			saved := "(not registered)"
-			if info, err := store.Read(config.AgentJSONPath()); err == nil {
-				if info.Endpoint != "" {
-					saved = info.Endpoint
-				} else {
-					saved = "(unset)"
-				}
-			}
-			fmt.Fprintf(out, "endpoint (saved): %s\n", saved)
+func statusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Print runtime configuration status",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Fprint(cmd.OutOrStdout(), status.Runtime(version))
 			return nil
 		},
 	}
