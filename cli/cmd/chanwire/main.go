@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -76,26 +78,47 @@ func mcpCmd() *cobra.Command {
 // ── version ──────────────────────────────────────────────────────────────────
 
 func versionCmd() *cobra.Command {
-	return &cobra.Command{
+	var format string
+	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateFormat(format, "text", "json"); err != nil {
+				return err
+			}
 			out := cmd.OutOrStdout()
+			if format == "json" {
+				return writeJSON(out, map[string]string{
+					"version": version,
+					"commit":  commit,
+				})
+			}
 			fmt.Fprint(out, status.Version(version, commit))
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text|json")
+	return cmd
 }
 
 func statusCmd() *cobra.Command {
-	return &cobra.Command{
+	var format string
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Print runtime configuration status",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateFormat(format, "text", "json"); err != nil {
+				return err
+			}
+			if format == "json" {
+				return writeJSON(cmd.OutOrStdout(), status.RuntimeInfo(version))
+			}
 			fmt.Fprint(cmd.OutOrStdout(), status.Runtime(version))
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text|json")
+	return cmd
 }
 
 // ── agent ─────────────────────────────────────────────────────────────────────
@@ -112,11 +135,15 @@ func agentCmd() *cobra.Command {
 
 func agentRegisterCmd() *cobra.Command {
 	var agentName string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "register",
 		Short: "Register this agent with the server",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateFormat(format, "text", "json"); err != nil {
+				return err
+			}
 			if agentName == "" {
 				return fmt.Errorf("--agent_name is required")
 			}
@@ -138,12 +165,16 @@ func agentRegisterCmd() *cobra.Command {
 				return fmt.Errorf("saving credentials: %w", err)
 			}
 
+			if format == "json" {
+				return writeJSON(cmd.OutOrStdout(), resp)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "registered: agent_name=%s\n", resp.AgentName)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&agentName, "agent_name", "", "Name to register (required)")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text|json")
 	return cmd
 }
 
@@ -165,11 +196,15 @@ func agentRegisterCmd() *cobra.Command {
 // The plugin (T5) parses --json output.
 func agentListCmd() *cobra.Command {
 	var jsonOut bool
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all registered agents",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateFormat(format, "table", "json"); err != nil {
+				return err
+			}
 			info, err := requireToken()
 			if err != nil {
 				return err
@@ -183,13 +218,8 @@ func agentListCmd() *cobra.Command {
 
 			out := cmd.OutOrStdout()
 
-			if jsonOut {
-				data, err := json.Marshal(resp)
-				if err != nil {
-					return fmt.Errorf("encoding JSON: %w", err)
-				}
-				fmt.Fprintln(out, string(data))
-				return nil
+			if jsonOut || format == "json" {
+				return writeJSON(out, resp)
 			}
 
 			fmt.Fprintf(out, "%-20s  %s\n", "NAME", "LAST_ACTIVE")
@@ -206,6 +236,8 @@ func agentListCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit one line of JSON instead of the table")
+	_ = cmd.Flags().MarkDeprecated("json", "use --format json instead")
+	cmd.Flags().StringVar(&format, "format", "table", "Output format: table|json")
 	return cmd
 }
 
@@ -222,11 +254,15 @@ func msgCmd() *cobra.Command {
 
 func msgSendCmd() *cobra.Command {
 	var toAgent, content string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "send",
 		Short: "Send a message to another agent",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateFormat(format, "text", "json"); err != nil {
+				return err
+			}
 			if toAgent == "" {
 				return fmt.Errorf("--to_agent is required")
 			}
@@ -251,6 +287,9 @@ func msgSendCmd() *cobra.Command {
 				return fmt.Errorf("send failed: %w", err)
 			}
 
+			if format == "json" {
+				return writeJSON(cmd.OutOrStdout(), resp)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "ok: message_id=%d\n", resp.MessageID)
 			return nil
 		},
@@ -258,6 +297,7 @@ func msgSendCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&toAgent, "to_agent", "", "Recipient agent name (required)")
 	cmd.Flags().StringVar(&content, "content", "", "Message content (required)")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text|json")
 	return cmd
 }
 
@@ -297,4 +337,22 @@ func connectCmd() *cobra.Command {
 // Callers should simply `return err` when this fails.
 func requireToken() (*store.AgentInfo, error) {
 	return store.Read(config.AgentJSONPath())
+}
+
+func validateFormat(format string, allowed ...string) error {
+	for _, v := range allowed {
+		if format == v {
+			return nil
+		}
+	}
+	return fmt.Errorf("--format must be one of: %s", strings.Join(allowed, "|"))
+}
+
+func writeJSON(out io.Writer, v any) error {
+	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("encoding JSON: %w", err)
+	}
+	return nil
 }

@@ -56,6 +56,9 @@ path already ending in `.config` becomes `<path>/chanwire`.
 diagnostics: version, resolved work directory with its source, active endpoint,
 and the current registered agent name when present.
 
+Agent-readable JSON is available on one-shot commands with `--format json`,
+including `version`, `status`, `agent register`, `agent list`, and `msg send`.
+
 The server reads a local `.env` if present.
 
 ## Tests

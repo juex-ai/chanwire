@@ -42,6 +42,23 @@ func TestVersionCommand(t *testing.T) {
 	}
 }
 
+func TestVersionJSON(t *testing.T) {
+	stdout, _, err := runArgs("version", "--format", "json")
+	if err != nil {
+		t.Fatalf("version --format json: %v", err)
+	}
+	var got struct {
+		Version string `json:"version"`
+		Commit  string `json:"commit"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("version JSON: %v\n%s", err, stdout)
+	}
+	if got.Version == "" || got.Commit == "" {
+		t.Fatalf("version JSON missing fields: %+v", got)
+	}
+}
+
 func TestStatusShowsRuntimeConfigAndAgentName(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CHANWIRE_DIR", dir)
@@ -67,6 +84,33 @@ func TestStatusShowsRuntimeConfigAndAgentName(t *testing.T) {
 	}
 	if strings.Contains(stdout, "http://saved.example:9999") {
 		t.Errorf("status should not print saved endpoint, got:\n%s", stdout)
+	}
+}
+
+func TestStatusJSON(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHANWIRE_DIR", dir)
+	t.Setenv("CHANWIRE_ENDPOINT", "http://status.example:12306")
+
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
+	writeAgentJSON(t, agentJSON, "alice", "tok", "http://saved.example:9999")
+
+	stdout, _, err := runArgs("status", "--format", "json")
+	if err != nil {
+		t.Fatalf("status --format json: %v", err)
+	}
+	var got struct {
+		Version       string `json:"version"`
+		WorkDirSource string `json:"work_dir_source"`
+		WorkDir       string `json:"work_dir"`
+		Endpoint      string `json:"endpoint"`
+		AgentName     string `json:"agent_name"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("status JSON: %v\n%s", err, stdout)
+	}
+	if got.WorkDirSource != "env" || got.WorkDir != filepath.Join(dir, ".config", "chanwire") || got.Endpoint != "http://status.example:12306" || got.AgentName != "alice" {
+		t.Fatalf("unexpected status JSON: %+v", got)
 	}
 }
 
@@ -160,6 +204,36 @@ func TestAgentRegisterMissingFlag(t *testing.T) {
 	}
 }
 
+func TestAgentRegisterJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"agent_name":"alice","token":"tok"}`))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	t.Setenv("CHANWIRE_DIR", dir)
+	t.Setenv("CHANWIRE_ENDPOINT", srv.URL)
+
+	stdout, _, err := runArgs("agent", "register", "--agent_name", "alice", "--format", "json")
+	if err != nil {
+		t.Fatalf("agent register --format json: %v", err)
+	}
+	var got struct {
+		AgentName string `json:"agent_name"`
+		Token     string `json:"token"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("register JSON: %v\n%s", err, stdout)
+	}
+	if got.AgentName != "alice" {
+		t.Fatalf("agent_name: got %q want alice", got.AgentName)
+	}
+	if got.Token != "tok" {
+		t.Fatalf("token: got %q want tok", got.Token)
+	}
+}
+
 // TestMsgSendMissingToAgent checks that --to_agent is required.
 func TestMsgSendMissingToAgent(t *testing.T) {
 	dir := t.TempDir()
@@ -233,7 +307,38 @@ func TestMsgSend404ReturnsError(t *testing.T) {
 	}
 }
 
-// TestAgentListJSON verifies --json emits a single line of valid JSON.
+func TestMsgSendJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"message_id":42,"sent_at":1778154123456}`))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	t.Setenv("CHANWIRE_DIR", dir)
+	t.Setenv("CHANWIRE_ENDPOINT", srv.URL)
+
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
+	writeAgentJSON(t, agentJSON, "alice", "tok", srv.URL)
+
+	stdout, _, err := runArgs("msg", "send", "--to_agent", "bob", "--content", "hi", "--format", "json")
+	if err != nil {
+		t.Fatalf("msg send --format json: %v", err)
+	}
+	var got struct {
+		MessageID int64 `json:"message_id"`
+		SentAt    int64 `json:"sent_at"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("send JSON: %v\n%s", err, stdout)
+	}
+	if got.MessageID != 42 || got.SentAt == 0 {
+		t.Fatalf("unexpected send JSON: %+v", got)
+	}
+}
+
+// TestAgentListJSON verifies legacy --json still emits valid JSON after the
+// deprecation warning.
 func TestAgentListJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -252,10 +357,13 @@ func TestAgentListJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agent list --json: %v", err)
 	}
-	// Expect exactly one trailing newline → one line of content.
 	trimmed := strings.TrimRight(stdout, "\n")
-	if strings.Contains(trimmed, "\n") {
-		t.Errorf("expected single-line JSON, got multi-line:\n%s", stdout)
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected deprecation warning plus JSON, got:\n%s", stdout)
+	}
+	if !strings.Contains(lines[0], "deprecated") {
+		t.Fatalf("expected deprecation warning, got:\n%s", stdout)
 	}
 	// Output must be valid JSON with the expected shape.
 	var parsed struct {
@@ -264,14 +372,49 @@ func TestAgentListJSON(t *testing.T) {
 			LastActiveAt *int64 `json:"last_active_at"`
 		} `json:"agents"`
 	}
-	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
-		t.Fatalf("not valid JSON: %v\noutput: %s", err, trimmed)
+	if err := json.Unmarshal([]byte(lines[1]), &parsed); err != nil {
+		t.Fatalf("not valid JSON: %v\noutput: %s", err, lines[1])
 	}
 	if len(parsed.Agents) != 2 {
 		t.Errorf("expected 2 agents, got %d", len(parsed.Agents))
 	}
 	if parsed.Agents[0].AgentName != "alice" {
 		t.Errorf("first agent: got %q want alice", parsed.Agents[0].AgentName)
+	}
+}
+
+func TestAgentListFormatJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"agents":[{"agent_name":"alice","last_active_at":1778154123456}]}`))
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	t.Setenv("CHANWIRE_DIR", dir)
+	t.Setenv("CHANWIRE_ENDPOINT", srv.URL)
+
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
+	writeAgentJSON(t, agentJSON, "alice", "tok", srv.URL)
+
+	stdout, _, err := runArgs("agent", "list", "--format", "json")
+	if err != nil {
+		t.Fatalf("agent list --format json: %v", err)
+	}
+	trimmed := strings.TrimRight(stdout, "\n")
+	if strings.Contains(trimmed, "\n") {
+		t.Fatalf("expected single-line JSON, got multi-line:\n%s", stdout)
+	}
+	var parsed struct {
+		Agents []struct {
+			AgentName string `json:"agent_name"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		t.Fatalf("not valid JSON: %v\noutput: %s", err, stdout)
+	}
+	if len(parsed.Agents) != 1 || parsed.Agents[0].AgentName != "alice" {
+		t.Fatalf("unexpected agents JSON: %+v", parsed)
 	}
 }
 

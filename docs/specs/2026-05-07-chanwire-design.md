@@ -134,6 +134,10 @@ Injected through `-ldflags "-X 'main.version=$VERSION' -X 'main.commit=$COMMIT'"
 
 `chanwire version` prints only the embedded `version` and `commit`.
 
+One-shot CLI commands that produce bounded output support `--format json` for
+agent parsing: `version`, `status`, `agent register`, `agent list`, and
+`msg send`. Existing human-readable output remains the default.
+
 ## MCP server contract
 
 - `chanwire mcp` runs an MCP server over stdio using the official Go SDK. By
