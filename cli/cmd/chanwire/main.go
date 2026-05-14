@@ -60,14 +60,17 @@ func rootCmd() *cobra.Command {
 }
 
 func mcpCmd() *cobra.Command {
-	return &cobra.Command{
+	var channel bool
+	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Run the chanwire MCP server (stdio)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			srv := mcp.NewServer(version)
+			srv := mcp.NewServer(version, channel)
 			return srv.Run(cmd.Context())
 		},
 	}
+	cmd.Flags().BoolVar(&channel, "channel", false, "Automatically stream chanwire messages as MCP channel notifications")
+	return cmd
 }
 
 // ── version ──────────────────────────────────────────────────────────────────
