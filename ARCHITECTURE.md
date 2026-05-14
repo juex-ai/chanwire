@@ -66,7 +66,7 @@ type hub struct {
 ```
 
 - Same agent may have multiple concurrent WS connections; deliveries fan out to all of them.
-- On WS connect: send the latest five persisted messages for the agent as one `type=history_batch` frame, then a single `type=history_done` marker, then switch to realtime.
+- On WS connect: send the latest five persisted messages for the agent as one `type=history_batch` frame when history exists, then switch to realtime. No separate history-end frame is sent.
 - On `POST /msg/send`: insert row, look up recipient's live connections, push as `type=realtime`. Recipient offline → only persisted; next reconnect picks it up through the history replay.
 
 ### WebSocket payload
@@ -95,9 +95,6 @@ All frames are JSON.
   "content": "hello",
   "sent_at": 1778154123456
 }
-
-// type=history_done — single frame, no other fields
-{ "type": "history_done" }
 ```
 
 ## CLI
@@ -106,4 +103,5 @@ All frames are JSON.
 - Token store: `<resolved-config-dir>/agent.json` with `{agent_name, token, endpoint}`. The CLI resolves the config directory from `--homedir`, then `CHANWIRE_DIR`, then the user's home directory, and normalizes the result to `.config/chanwire`.
 - `version` prints build metadata only; `status` prints runtime diagnostics without the saved endpoint.
 - Bounded one-shot commands expose machine-readable output with `--format json`; streaming `connect` remains line-oriented.
+- `connect` prints `history_batch` content as one review block; realtime messages print individually as they arrive.
 - Reconnect backoff (seconds): `1, 5, 15, 30, 60, 120`, capped at `120`; resets on successful connect.

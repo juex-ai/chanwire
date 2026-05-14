@@ -50,8 +50,9 @@ All bodies are JSON. All timestamps are unix milliseconds.
 - **Auth:** required, via the same `Authorization: Bearer <token>`
   header on the upgrade request.
 - After upgrade the server immediately sends the latest five persisted
-  messages for the agent as one `type=history_batch` frame, emits one
-  `type=history_done`, then switches to realtime mode.
+  messages for the agent as one `type=history_batch` frame when history
+  exists, then switches to realtime mode. There is no separate history-end
+  frame.
 - Server-to-client frames are JSON, one message per frame.
 - Client-to-server frames are not used; clients should not send
   payloads. (The WS is one-way for now; sending happens via the HTTP
@@ -81,9 +82,6 @@ All bodies are JSON. All timestamps are unix milliseconds.
   "content": "hello",
   "sent_at": 1778154123456
 }
-
-// type = "history_done" — single frame, no other fields
-{ "type": "history_done" }
 ```
 
 `message_id` is monotonic per server (the SQLite rowid). It is NOT a

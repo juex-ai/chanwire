@@ -164,12 +164,8 @@ func printFrame(w io.Writer, f *Frame) {
 			fmt.Fprintf(w, "[history]  from %s at %s: %s\n", msg.FromAgent, formatTSValue(msg.SentAt), msg.Content)
 		}
 		fmt.Fprintln(w, "-- end history batch --")
-	case "history":
-		fmt.Fprintf(w, "[history]  from %s at %s: %s\n", f.FromAgent, formatTS(f.SentAt), f.Content)
 	case "realtime":
 		fmt.Fprintf(w, "[realtime] from %s at %s: %s\n", f.FromAgent, formatTS(f.SentAt), f.Content)
-	case "history_done":
-		fmt.Fprintln(w, "-- end of history --")
 	}
 }
 

@@ -421,12 +421,8 @@ func (s *Server) handleFrame(frame *client.Frame) {
 	switch frame.Type {
 	case "history_batch":
 		s.sendChannelNotification(formatHistoryBatch(frame.Messages), "message")
-	case "history":
-		s.sendChannelNotification(formatFrame("history", frame), "message")
 	case "realtime":
 		s.sendChannelNotification(formatFrame("realtime", frame), "message")
-	case "history_done":
-		s.sendChannelNotification("-- end of history --", "message")
 	}
 }
 

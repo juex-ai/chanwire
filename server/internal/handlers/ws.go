@@ -63,16 +63,11 @@ func WSConnect(s *store.Store, h *hub.Hub) app.HandlerFunc {
 				}
 			}
 
-			// 2. Send history_done.
-			if err := wsConn.WriteFrame(proto.Frame{Type: "history_done"}); err != nil {
-				return
-			}
-
-			// 3. Register in hub for realtime delivery.
+			// 2. Register in hub for realtime delivery.
 			h.Register(agentID, wsConn)
 			defer h.Unregister(agentID, wsConn)
 
-			// 4. Keep the connection open; drain any client-sent frames (ignored).
+			// 3. Keep the connection open; drain any client-sent frames (ignored).
 			for {
 				if _, _, err := conn.ReadMessage(); err != nil {
 					break

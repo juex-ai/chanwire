@@ -166,6 +166,100 @@ func readFrame(t *testing.T, conn *websocket.Conn) proto.Frame {
 	return f
 }
 
+func assertNoFrame(t *testing.T, conn *websocket.Conn, timeout time.Duration) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	if _, msg, err := conn.ReadMessage(); err == nil {
+		var f proto.Frame
+		if err := json.Unmarshal(msg, &f); err != nil {
+			t.Fatalf("unexpected non-json WS frame %q", msg)
+		}
+		t.Fatalf("unexpected WS frame: %+v", f)
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		t.Fatalf("expected timeout while checking for absent WS frame, got: %v", err)
+	}
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatalf("clear read deadline: %v", err)
+	}
+}
+
+func sendUntilRealtime(t *testing.T, baseURL, token, toAgent, content string, conns ...*websocket.Conn) []proto.Frame {
+	t.Helper()
+
+	if len(conns) == 0 {
+		return nil
+	}
+
+	type result struct {
+		index int
+		frame proto.Frame
+		err   error
+	}
+	results := make(chan result, len(conns))
+	for i, conn := range conns {
+		if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			t.Fatalf("set read deadline: %v", err)
+		}
+		go func(index int, c *websocket.Conn) {
+			for {
+				_, raw, err := c.ReadMessage()
+				if err != nil {
+					results <- result{index: index, err: err}
+					return
+				}
+				var frame proto.Frame
+				if err := json.Unmarshal(raw, &frame); err != nil {
+					results <- result{index: index, err: fmt.Errorf("unmarshal frame %q: %w", raw, err)}
+					return
+				}
+				if frame.Type == "realtime" && frame.Content == content {
+					results <- result{index: index, frame: frame}
+					return
+				}
+			}
+		}(i, conn)
+	}
+
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
+
+	frames := make([]proto.Frame, len(conns))
+	seen := make([]bool, len(conns))
+	seenCount := 0
+	for seenCount < len(conns) {
+		doPost(t, baseURL+"/api/v1/msg/send", token, proto.SendRequest{
+			ToAgent: toAgent,
+			Content: content,
+		})
+
+		select {
+		case res := <-results:
+			if res.err != nil {
+				t.Fatalf("read realtime frame: %v", res.err)
+			}
+			if !seen[res.index] {
+				seen[res.index] = true
+				frames[res.index] = res.frame
+				seenCount++
+			}
+		case <-ticker.C:
+		case <-timeout.C:
+			t.Fatalf("timed out waiting for realtime frame %q", content)
+		}
+	}
+
+	for _, conn := range conns {
+		if err := conn.SetReadDeadline(time.Time{}); err != nil {
+			t.Fatalf("clear read deadline: %v", err)
+		}
+	}
+	return frames
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -293,7 +387,7 @@ func TestMsgSendUnknownAgent(t *testing.T) {
 	}
 }
 
-// 6. WS connect: receives recent history as one batch, then history_done, then realtime.
+// 6. WS connect: receives recent history as one batch, then realtime.
 func TestWSHistoryAndRealtime(t *testing.T) {
 	baseURL, cleanup := testServer(t)
 	defer cleanup()
@@ -324,20 +418,30 @@ func TestWSHistoryAndRealtime(t *testing.T) {
 			t.Fatalf("history batch message %d: got %q want %q", i, f1.Messages[i].Content, want)
 		}
 	}
-
-	// history_done.
-	fd := readFrame(t, conn)
-	if fd.Type != "history_done" {
-		t.Fatalf("expected history_done, got %+v", fd)
-	}
-
-	// Now Alice sends another message — Bob should get it as realtime.
-	doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: "realtime-msg"})
-
-	fr := readFrame(t, conn)
+	frames := sendUntilRealtime(t, baseURL, tokenA, "bob", "realtime-msg", conn)
+	fr := frames[0]
 	if fr.Type != "realtime" || fr.Content != "realtime-msg" {
 		t.Fatalf("realtime frame: want realtime/realtime-msg, got %+v", fr)
 	}
+}
+
+func TestWSDoesNotSendHistoryDone(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	tokenA := register(t, baseURL, "alice")
+	tokenB := register(t, baseURL, "bob")
+
+	doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: "history-only"})
+
+	conn := dialWS(t, baseURL, tokenB)
+	defer conn.Close()
+
+	f := readFrame(t, conn)
+	if f.Type != "history_batch" || len(f.Messages) != 1 || f.Messages[0].Content != "history-only" {
+		t.Fatalf("history replay: want one history_batch, got %+v", f)
+	}
+	assertNoFrame(t, conn, 100*time.Millisecond)
 }
 
 // 7. Two concurrent WS conns for same agent: realtime fanout to both.
@@ -354,51 +458,9 @@ func TestWSFanout(t *testing.T) {
 	conn2 := dialWS(t, baseURL, tokenB)
 	defer conn2.Close()
 
-	// Drain history_done for both (no history yet).
-	drainToDone := func(conn *websocket.Conn) {
-		for {
-			f := readFrame(t, conn)
-			if f.Type == "history_done" {
-				return
-			}
-		}
-	}
-	drainToDone(conn1)
-	drainToDone(conn2)
-
-	// Alice sends to Bob.
-	doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: "fanout"})
-
-	// Both connections should get a realtime frame.
-	got1 := make(chan proto.Frame, 1)
-	got2 := make(chan proto.Frame, 1)
-
-	go func() {
-		conn1.SetReadDeadline(time.Now().Add(3 * time.Second))
-		_, msg, err := conn1.ReadMessage()
-		if err != nil {
-			got1 <- proto.Frame{Type: "error"}
-			return
-		}
-		var f proto.Frame
-		json.Unmarshal(msg, &f)
-		got1 <- f
-	}()
-
-	go func() {
-		conn2.SetReadDeadline(time.Now().Add(3 * time.Second))
-		_, msg, err := conn2.ReadMessage()
-		if err != nil {
-			got2 <- proto.Frame{Type: "error"}
-			return
-		}
-		var f proto.Frame
-		json.Unmarshal(msg, &f)
-		got2 <- f
-	}()
-
-	f1 := <-got1
-	f2 := <-got2
+	frames := sendUntilRealtime(t, baseURL, tokenA, "bob", "fanout", conn1, conn2)
+	f1 := frames[0]
+	f2 := frames[1]
 
 	if f1.Type != "realtime" || f1.Content != "fanout" {
 		t.Fatalf("conn1: want realtime/fanout, got %+v", f1)
@@ -426,10 +488,5 @@ func TestOfflineThenOnline(t *testing.T) {
 	f := readFrame(t, conn)
 	if f.Type != "history_batch" || len(f.Messages) != 1 || f.Messages[0].Content != "offline-msg" {
 		t.Fatalf("offline→online: want history_batch/offline-msg, got %+v", f)
-	}
-
-	fd := readFrame(t, conn)
-	if fd.Type != "history_done" {
-		t.Fatalf("expected history_done, got %+v", fd)
 	}
 }
