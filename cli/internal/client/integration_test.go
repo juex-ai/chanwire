@@ -182,6 +182,12 @@ func TestWSFrames(t *testing.T) {
 		FromAgent string `json:"from_agent,omitempty"`
 		Content   string `json:"content,omitempty"`
 		SentAt    *int64 `json:"sent_at,omitempty"`
+		Messages  []struct {
+			MessageID *int64 `json:"message_id,omitempty"`
+			FromAgent string `json:"from_agent,omitempty"`
+			Content   string `json:"content,omitempty"`
+			SentAt    *int64 `json:"sent_at,omitempty"`
+		} `json:"messages,omitempty"`
 	}
 
 	ts1 := int64(1778154100000)
@@ -190,7 +196,14 @@ func TestWSFrames(t *testing.T) {
 	id2 := int64(2)
 
 	frames := []Frame{
-		{Type: "history", MessageID: &id1, FromAgent: "alice", Content: "hello history", SentAt: &ts1},
+		{Type: "history_batch", Messages: []struct {
+			MessageID *int64 `json:"message_id,omitempty"`
+			FromAgent string `json:"from_agent,omitempty"`
+			Content   string `json:"content,omitempty"`
+			SentAt    *int64 `json:"sent_at,omitempty"`
+		}{
+			{MessageID: &id1, FromAgent: "alice", Content: "hello history", SentAt: &ts1},
+		}},
 		{Type: "history_done"},
 		{Type: "realtime", MessageID: &id2, FromAgent: "bob", Content: "hello realtime", SentAt: &ts2},
 	}
@@ -231,7 +244,9 @@ func TestWSFrames(t *testing.T) {
 	t2 := time.UnixMilli(ts2).UTC().Format("2006-01-02 15:04:05")
 
 	expected := []string{
+		"-- history batch (one-time review, 1 message) --",
 		"[history]  from alice at " + t1 + ": hello history",
+		"-- end history batch --",
 		"-- end of history --",
 		"[realtime] from bob at " + t2 + ": hello realtime",
 	}
@@ -285,8 +300,8 @@ func TestWSReconnect(t *testing.T) {
 
 	// Track waiter calls under a mutex.
 	var (
-		waitMu     sync.Mutex
-		waitCalls  []time.Duration
+		waitMu    sync.Mutex
+		waitCalls []time.Duration
 	)
 	fakeWait := func(ctx context.Context, d time.Duration) error {
 		waitMu.Lock()

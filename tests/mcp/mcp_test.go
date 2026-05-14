@@ -26,12 +26,14 @@ func TestMCPFlow(t *testing.T) {
 	bob := "mcp-bob-" + suffix
 	bobToAliceContent := "mcp bob to alice " + suffix
 	aliceToBobContent := "mcp alice to bob line 1\nline 2 " + suffix
+	bobHistoryContent := "mcp bob history batch " + suffix
 
 	aliceToken := e2e.RegisterAgent(t, endpoint, alice)
 	aliceConn := e2e.DialWS(t, endpoint, aliceToken)
 	defer aliceConn.Close()
 
-	mcp := startMCPServer(t, bin, endpoint, t.TempDir())
+	mcpDataDir := t.TempDir()
+	mcp := startMCPServer(t, bin, endpoint, mcpDataDir)
 	mcp.send(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -122,6 +124,38 @@ func TestMCPFlow(t *testing.T) {
 			strings.Contains(content, aliceToBobContent)
 	})
 	assertChannelEvent(t, msgNotification, "message", aliceToBobContent)
+
+	mcp.stop()
+	e2e.SendMessage(t, endpoint, aliceToken, bob, bobHistoryContent, http.StatusOK)
+
+	mcp2 := startMCPServer(t, bin, endpoint, mcpDataDir)
+	mcp2.send(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      8,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    map[string]any{},
+			"clientInfo": map[string]any{
+				"name":    "chanwire-e2e",
+				"version": "test",
+			},
+		},
+	})
+	assertNoRPCError(t, mcp2.waitResponse(8))
+
+	mcp2.send(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+		"params":  map[string]any{},
+	})
+	historyNotification := mcp2.waitNotification("notifications/claude/channel", func(params map[string]any) bool {
+		content, _ := params["content"].(string)
+		return strings.Contains(content, "history batch: one-time review") &&
+			strings.Contains(content, "[history] from "+alice) &&
+			strings.Contains(content, bobHistoryContent)
+	})
+	assertChannelEvent(t, historyNotification, "message", bobHistoryContent)
 }
 
 func callTool(t *testing.T, c *stdioMCP, id int, name string, args map[string]any) {
@@ -193,16 +227,20 @@ func startMCPServer(t *testing.T, bin, endpoint, dataDir string) *stdioMCP {
 	}()
 
 	t.Cleanup(func() {
-		_ = stdin.Close()
-		cancel()
-		select {
-		case <-c.done:
-		case <-time.After(5 * time.Second):
-			t.Logf("MCP subprocess did not exit within timeout; stderr:\n%s", c.stderr.String())
-		}
+		c.stop()
 	})
 
 	return c
+}
+
+func (c *stdioMCP) stop() {
+	_ = c.stdin.Close()
+	c.cancel()
+	select {
+	case <-c.done:
+	case <-time.After(5 * time.Second):
+		c.t.Logf("MCP subprocess did not exit within timeout; stderr:\n%s", c.stderr.String())
+	}
 }
 
 func (c *stdioMCP) readStdout(stdout io.Reader) {

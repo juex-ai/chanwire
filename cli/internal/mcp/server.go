@@ -413,6 +413,8 @@ func (s *Server) setBlocked() {
 // handleFrame forwards decoded WebSocket frames to the MCP client.
 func (s *Server) handleFrame(frame *client.Frame) {
 	switch frame.Type {
+	case "history_batch":
+		s.sendChannelNotification(formatHistoryBatch(frame.Messages), "message")
 	case "history":
 		s.sendChannelNotification(formatFrame("history", frame), "message")
 	case "realtime":
@@ -459,6 +461,21 @@ func formatFrame(kind string, frame *client.Frame) string {
 		label = "[realtime]"
 	}
 	return fmt.Sprintf("%s from %s at %s: %s", label, frame.FromAgent, safeFrameTS(frame.SentAt), frame.Content)
+}
+
+func formatHistoryBatch(messages []client.HistoryMessage) string {
+	lines := []string{fmt.Sprintf("[history batch: one-time review, %d %s]", len(messages), pluralize("message", len(messages)))}
+	for _, msg := range messages {
+		lines = append(lines, fmt.Sprintf("[history] from %s at %s: %s", msg.FromAgent, safeISO(msg.SentAt), msg.Content))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func pluralize(word string, n int) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 func safeFrameTS(ms *int64) string {

@@ -15,11 +15,20 @@ import (
 
 // Frame represents a server-to-client WebSocket frame.
 type Frame struct {
-	Type      string `json:"type"`
-	MessageID *int64 `json:"message_id,omitempty"`
+	Type      string           `json:"type"`
+	MessageID *int64           `json:"message_id,omitempty"`
+	FromAgent string           `json:"from_agent,omitempty"`
+	Content   string           `json:"content,omitempty"`
+	SentAt    *int64           `json:"sent_at,omitempty"`
+	Messages  []HistoryMessage `json:"messages,omitempty"`
+}
+
+// HistoryMessage is one message inside a one-time history batch.
+type HistoryMessage struct {
+	MessageID int64  `json:"message_id,omitempty"`
 	FromAgent string `json:"from_agent,omitempty"`
 	Content   string `json:"content,omitempty"`
-	SentAt    *int64 `json:"sent_at,omitempty"`
+	SentAt    int64  `json:"sent_at,omitempty"`
 }
 
 // FrameHandler receives decoded WebSocket frames.
@@ -149,6 +158,12 @@ func (c *WSClient) readLoop(ctx context.Context, conn *websocket.Conn, handle Fr
 // printFrame writes a single frame to w in the format defined by the spec.
 func printFrame(w io.Writer, f *Frame) {
 	switch f.Type {
+	case "history_batch":
+		fmt.Fprintf(w, "-- history batch (one-time review, %d %s) --\n", len(f.Messages), pluralize("message", len(f.Messages)))
+		for _, msg := range f.Messages {
+			fmt.Fprintf(w, "[history]  from %s at %s: %s\n", msg.FromAgent, formatTSValue(msg.SentAt), msg.Content)
+		}
+		fmt.Fprintln(w, "-- end history batch --")
 	case "history":
 		fmt.Fprintf(w, "[history]  from %s at %s: %s\n", f.FromAgent, formatTS(f.SentAt), f.Content)
 	case "realtime":
@@ -163,7 +178,18 @@ func formatTS(ms *int64) string {
 	if ms == nil {
 		return "(unknown)"
 	}
-	return time.UnixMilli(*ms).UTC().Format("2006-01-02 15:04:05")
+	return formatTSValue(*ms)
+}
+
+func formatTSValue(ms int64) string {
+	return time.UnixMilli(ms).UTC().Format("2006-01-02 15:04:05")
+}
+
+func pluralize(word string, n int) string {
+	if n == 1 {
+		return word
+	}
+	return word + "s"
 }
 
 // ConnectWithReset opens a WebSocket, prints incoming frames to w, and

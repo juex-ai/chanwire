@@ -293,7 +293,7 @@ func TestMsgSendUnknownAgent(t *testing.T) {
 	}
 }
 
-// 6. WS connect: receives history in order, then history_done, then realtime.
+// 6. WS connect: receives recent history as one batch, then history_done, then realtime.
 func TestWSHistoryAndRealtime(t *testing.T) {
 	baseURL, cleanup := testServer(t)
 	defer cleanup()
@@ -301,22 +301,28 @@ func TestWSHistoryAndRealtime(t *testing.T) {
 	tokenA := register(t, baseURL, "alice")
 	tokenB := register(t, baseURL, "bob")
 
-	// Alice sends two messages to Bob before Bob connects.
-	doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: "msg1"})
-	doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: "msg2"})
+	// Alice sends six messages to Bob before Bob connects. Only the latest five
+	// should be replayed, and they should arrive as a single history batch.
+	for _, content := range []string{"msg1", "msg2", "msg3", "msg4", "msg5", "msg6"} {
+		doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: content})
+	}
 
 	// Bob connects to WS.
 	conn := dialWS(t, baseURL, tokenB)
 	defer conn.Close()
 
-	// Expect history frames: msg1, msg2.
+	// Expect one history batch: msg2..msg6.
 	f1 := readFrame(t, conn)
-	if f1.Type != "history" || f1.Content != "msg1" {
-		t.Fatalf("history frame 1: want history/msg1, got %+v", f1)
+	if f1.Type != "history_batch" {
+		t.Fatalf("history frame: want history_batch, got %+v", f1)
 	}
-	f2 := readFrame(t, conn)
-	if f2.Type != "history" || f2.Content != "msg2" {
-		t.Fatalf("history frame 2: want history/msg2, got %+v", f2)
+	if len(f1.Messages) != 5 {
+		t.Fatalf("history batch len: got %d want 5 (%+v)", len(f1.Messages), f1.Messages)
+	}
+	for i, want := range []string{"msg2", "msg3", "msg4", "msg5", "msg6"} {
+		if f1.Messages[i].Content != want {
+			t.Fatalf("history batch message %d: got %q want %q", i, f1.Messages[i].Content, want)
+		}
 	}
 
 	// history_done.
@@ -418,8 +424,8 @@ func TestOfflineThenOnline(t *testing.T) {
 	defer conn.Close()
 
 	f := readFrame(t, conn)
-	if f.Type != "history" || f.Content != "offline-msg" {
-		t.Fatalf("offline→online: want history/offline-msg, got %+v", f)
+	if f.Type != "history_batch" || len(f.Messages) != 1 || f.Messages[0].Content != "offline-msg" {
+		t.Fatalf("offline→online: want history_batch/offline-msg, got %+v", f)
 	}
 
 	fd := readFrame(t, conn)

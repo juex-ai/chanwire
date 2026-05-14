@@ -35,7 +35,9 @@ func TestCLIFlow(t *testing.T) {
 	connect := e2e.StartCLIConnect(t, bin, endpoint, bobDir)
 	defer connect.Stop()
 
+	connect.WaitForLine(t, "-- history batch (one-time review, 1 message) --")
 	connect.WaitForLine(t, offlineContent)
+	connect.WaitForLine(t, "-- end history batch --")
 	connect.WaitForLine(t, "-- end of history --")
 
 	out = e2e.RunCLI(t, bin, endpoint, aliceDir, "msg", "send", "--to_agent", bob, "--content", realtimeContent)
