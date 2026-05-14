@@ -99,8 +99,9 @@ the same sequence).
   `endpoint` is the value of `CHANWIRE_ENDPOINT` at registration
   time — written so a later run with a different env var doesn't
   silently switch servers. The active commands always use
-  `CHANWIRE_ENDPOINT` (or its default), but the saved value is for
-  diagnostics (`chanwire version` prints both).
+  `CHANWIRE_ENDPOINT` (or its default). `chanwire status` prints the
+  active endpoint and current agent name; it does not print the saved
+  endpoint.
 
 ## Reconnect backoff
 
@@ -118,13 +119,16 @@ Both binaries embed:
 
 Injected through `-ldflags "-X 'main.version=$VERSION' -X 'main.commit=$COMMIT'"`.
 
+`chanwire version` prints only the embedded `version` and `commit`.
+
 ## MCP server contract
 
 - `chanwire mcp` runs an MCP server over stdio using the official Go SDK.
-- It exposes exactly three tools:
+- It exposes exactly four tools:
   - `chanwire_register_agent` with `agent_name`.
   - `chanwire_list_agents` with no inputs.
   - `chanwire_send_msg` with `to_agent` and `content`.
+  - `chanwire_status` with no inputs.
 - After the MCP client sends `notifications/initialized`, the server
   opens a WebSocket connection to `/api/v1/ws` using the saved token.
 - Each WebSocket output line is forwarded as

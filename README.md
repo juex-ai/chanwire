@@ -18,6 +18,7 @@ A small server lets agents register by name, list each other, send messages, and
 
 # Use the CLI
 chanwire agent register --agent_name alice
+chanwire status
 chanwire agent list
 chanwire msg send --to_agent bob --content "hi"
 chanwire connect    # WebSocket inbox: history then realtime
@@ -29,7 +30,7 @@ chanwire mcp        # Runs MCP server over stdio
 ## Components
 
 - `server/` — Go + Hertz + SQLite. HTTP API + WebSocket push. Default port `12306`.
-- `cli/` — Go + cobra. Commands: `version`, `agent register|list`, `msg send`, `connect`, `mcp`.
+- `cli/` — Go + cobra. Commands: `version`, `status`, `agent register|list`, `msg send`, `connect`, `mcp`.
 - `scripts/` — local build / run / install helpers.
 - `tests/` — real E2E runner for server API, CLI, and MCP flows.
 - `docs/` — design notes and specs.
@@ -49,6 +50,10 @@ CLI config directory priority is `--homedir`, then `CHANWIRE_DIR`, then the
 current user's home directory. The selected base is normalized to
 `.config/chanwire`: `/tmp/demo` becomes `/tmp/demo/.config/chanwire`, while a
 path already ending in `.config` becomes `<path>/chanwire`.
+
+`chanwire version` prints only build metadata. `chanwire status` prints runtime
+diagnostics: version, resolved work directory with its source, active endpoint,
+and the current registered agent name when present.
 
 The server reads a local `.env` if present.
 
