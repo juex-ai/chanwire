@@ -29,6 +29,12 @@ type WSFrame struct {
 	FromAgent string `json:"from_agent,omitempty"`
 	Content   string `json:"content,omitempty"`
 	SentAt    int64  `json:"sent_at,omitempty"`
+	Messages  []struct {
+		MessageID int64  `json:"message_id,omitempty"`
+		FromAgent string `json:"from_agent,omitempty"`
+		Content   string `json:"content,omitempty"`
+		SentAt    int64  `json:"sent_at,omitempty"`
+	} `json:"messages,omitempty"`
 }
 
 type agentListResponse struct {
@@ -155,8 +161,17 @@ func ReadUntilHistoryDone(t *testing.T, conn *websocket.Conn, wantContent string
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		frame := readWSFrame(t, conn, deadline)
-		if frame.Type == "history" && frame.Content == wantContent {
-			found = true
+		if frame.Type == "history" {
+			if frame.Content == wantContent {
+				found = true
+			}
+		}
+		if frame.Type == "history_batch" {
+			for _, msg := range frame.Messages {
+				if msg.Content == wantContent {
+					found = true
+				}
+			}
 		}
 		if frame.Type == "history_done" {
 			return found

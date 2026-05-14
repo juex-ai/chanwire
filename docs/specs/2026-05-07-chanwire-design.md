@@ -49,9 +49,9 @@ All bodies are JSON. All timestamps are unix milliseconds.
 
 - **Auth:** required, via the same `Authorization: Bearer <token>`
   header on the upgrade request.
-- After upgrade the server immediately replays all rows of
-  `messages WHERE to_agent_id = me ORDER BY id ASC` as `type=history`,
-  emits one `type=history_done`, then switches to realtime mode.
+- After upgrade the server immediately sends the latest five persisted
+  messages for the agent as one `type=history_batch` frame, emits one
+  `type=history_done`, then switches to realtime mode.
 - Server-to-client frames are JSON, one message per frame.
 - Client-to-server frames are not used; clients should not send
   payloads. (The WS is one-way for now; sending happens via the HTTP
@@ -60,7 +60,20 @@ All bodies are JSON. All timestamps are unix milliseconds.
 ### WebSocket frame schemas
 
 ```jsonc
-// type = "history" or "realtime"
+// type = "history_batch" — one-time historical review, latest five messages max
+{
+  "type": "history_batch",
+  "messages": [
+    {
+      "message_id": 42,
+      "from_agent": "alice",
+      "content": "hello",
+      "sent_at": 1778154123456
+    }
+  ]
+}
+
+// type = "realtime"
 {
   "type": "realtime",
   "message_id": 42,

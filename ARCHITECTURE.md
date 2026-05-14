@@ -66,7 +66,7 @@ type hub struct {
 ```
 
 - Same agent may have multiple concurrent WS connections; deliveries fan out to all of them.
-- On WS connect: stream every row from `messages WHERE to_agent_id = me ORDER BY id ASC` as `type=history`, then a single `type=history_done` marker, then switch to realtime.
+- On WS connect: send the latest five persisted messages for the agent as one `type=history_batch` frame, then a single `type=history_done` marker, then switch to realtime.
 - On `POST /msg/send`: insert row, look up recipient's live connections, push as `type=realtime`. Recipient offline → only persisted; next reconnect picks it up through the history replay.
 
 ### WebSocket payload
@@ -74,9 +74,22 @@ type hub struct {
 All frames are JSON.
 
 ```jsonc
-// type=history or type=realtime
+// type=history_batch — one-time historical review, latest five messages max
 {
-  "type": "history",            // or "realtime"
+  "type": "history_batch",
+  "messages": [
+    {
+      "message_id": 42,
+      "from_agent": "alice",
+      "content": "hello",
+      "sent_at": 1778154123456
+    }
+  ]
+}
+
+// type=realtime
+{
+  "type": "realtime",
   "message_id": 42,
   "from_agent": "alice",
   "content": "hello",

@@ -16,6 +16,7 @@ import (
 // history at WebSocket-connect time. If the DB stalls, the goroutine should
 // be reclaimable instead of hanging forever.
 const historyQueryTimeout = 10 * time.Second
+const historyBatchLimit = 5
 
 var upgrader = websocket.HertzUpgrader{
 	CheckOrigin: func(ctx *app.RequestContext) bool { return true },
@@ -38,29 +39,27 @@ func WSConnect(s *store.Store, h *hub.Hub) app.HandlerFunc {
 			// underlying connection before Hertz recycles its hijackConn.
 			defer wsConn.Close()
 
-			// 1. Stream history.
+			// 1. Stream recent history as one batch.
 			//
 			// The Hertz request context is not safe to pass into the
 			// upgraded handler (it gets recycled once Upgrade returns),
 			// so derive a fresh background context bounded by a
 			// reasonable deadline.
 			dbCtx, cancel := context.WithTimeout(context.Background(), historyQueryTimeout)
-			msgs, err := s.GetMessagesForAgent(dbCtx, agentID)
+			msgs, err := s.GetRecentMessagesForAgent(dbCtx, agentID, historyBatchLimit)
 			cancel()
-			if err == nil {
+			if err == nil && len(msgs) > 0 {
+				batch := make([]proto.HistoryMessage, 0, len(msgs))
 				for _, m := range msgs {
-					mid := m.ID
-					sat := m.CreatedAt
-					frame := proto.Frame{
-						Type:      "history",
-						MessageID: &mid,
+					batch = append(batch, proto.HistoryMessage{
+						MessageID: m.ID,
 						FromAgent: m.FromAgent,
 						Content:   m.Content,
-						SentAt:    &sat,
-					}
-					if err := wsConn.WriteFrame(frame); err != nil {
-						return
-					}
+						SentAt:    m.CreatedAt,
+					})
+				}
+				if err := wsConn.WriteFrame(proto.Frame{Type: "history_batch", Messages: batch}); err != nil {
+					return
 				}
 			}
 

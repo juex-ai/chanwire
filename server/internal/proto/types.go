@@ -14,8 +14,8 @@ type RegisterResponse struct {
 
 // AgentInfo is one entry in the /agent/list response.
 type AgentInfo struct {
-	AgentName    string  `json:"agent_name"`
-	LastActiveAt *int64  `json:"last_active_at"` // unix millis, null when never active
+	AgentName    string `json:"agent_name"`
+	LastActiveAt *int64 `json:"last_active_at"` // unix millis, null when never active
 }
 
 // AgentListResponse is the success body for GET /api/v1/agent/list.
@@ -40,12 +40,21 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+// HistoryMessage is one message inside a one-time WebSocket history batch.
+type HistoryMessage struct {
+	MessageID int64  `json:"message_id"`
+	FromAgent string `json:"from_agent"`
+	Content   string `json:"content"`
+	SentAt    int64  `json:"sent_at"`
+}
+
 // Frame is a server-to-client WebSocket message.
-// Type is one of "history", "realtime", "history_done".
+// Type is one of "history_batch", "realtime", "history_done".
 type Frame struct {
-	Type      string `json:"type"`
-	MessageID *int64 `json:"message_id,omitempty"`
-	FromAgent string `json:"from_agent,omitempty"`
-	Content   string `json:"content,omitempty"`
-	SentAt    *int64 `json:"sent_at,omitempty"`
+	Type      string           `json:"type"`
+	MessageID *int64           `json:"message_id,omitempty"`
+	FromAgent string           `json:"from_agent,omitempty"`
+	Content   string           `json:"content,omitempty"`
+	SentAt    *int64           `json:"sent_at,omitempty"`
+	Messages  []HistoryMessage `json:"messages,omitempty"`
 }
