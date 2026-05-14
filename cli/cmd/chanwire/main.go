@@ -64,7 +64,7 @@ func mcpCmd() *cobra.Command {
 		Use:   "mcp",
 		Short: "Run the chanwire MCP server (stdio)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			srv := mcp.NewServer(version, commit)
+			srv := mcp.NewServer(version)
 			return srv.Run(cmd.Context())
 		},
 	}

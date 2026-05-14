@@ -54,12 +54,12 @@ func TestStatusShowsRuntimeConfigAndAgentName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status command: %v", err)
 	}
-	wantDir := "work_dir(env):   " + filepath.Join(dir, ".config", "chanwire")
+	wantDir := "work_dir(env):     " + filepath.Join(dir, ".config", "chanwire")
 	for _, want := range []string{
 		"version:",
 		wantDir,
-		"endpoint:        http://status.example:12306",
-		"agent_name:      alice",
+		"endpoint:          http://status.example:12306",
+		"agent_name:        alice",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("expected %q in output, got:\n%s", want, stdout)
@@ -96,7 +96,7 @@ func TestHomeDirFlagWinsOverEnvAndNormalizes(t *testing.T) {
 		t.Fatalf("status --homedir: %v", err)
 	}
 
-	want := "work_dir(flag):  " + filepath.Join(flagRoot, ".config", "chanwire")
+	want := "work_dir(flag):    " + filepath.Join(flagRoot, ".config", "chanwire")
 	if !strings.Contains(stdout, want) {
 		t.Fatalf("expected %q in output, got:\n%s", want, stdout)
 	}
@@ -129,7 +129,7 @@ func TestHomeDirFlagResolvesRelativeFromWorkingDirectory(t *testing.T) {
 		t.Fatalf("status --homedir .: %v", err)
 	}
 
-	want := "work_dir(flag):  " + filepath.Join(cwd, ".config", "chanwire")
+	want := "work_dir(flag):    " + filepath.Join(cwd, ".config", "chanwire")
 	if !strings.Contains(stdout, want) {
 		t.Fatalf("expected %q in output, got:\n%s", want, stdout)
 	}

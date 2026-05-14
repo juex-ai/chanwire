@@ -35,12 +35,11 @@ type Server struct {
 	agentInfo     *store.AgentInfo
 	blocked       bool
 	version       string
-	commit        string
 }
 
 // NewServer creates a new MCP server
-func NewServer(version, commit string) *Server {
-	return &Server{version: version, commit: commit}
+func NewServer(version string) *Server {
+	return &Server{version: version}
 }
 
 // Run starts the MCP server and runs until context is cancelled

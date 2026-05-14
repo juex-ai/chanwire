@@ -79,7 +79,7 @@ func TestMCPFlow(t *testing.T) {
 	assertNoRPCError(t, statusResp)
 	assertToolTextContains(t, statusResp, "version:")
 	assertToolTextContains(t, statusResp, "work_dir(env):")
-	assertToolTextContains(t, statusResp, "endpoint:        "+endpoint)
+	assertToolTextContains(t, statusResp, "endpoint:          "+endpoint)
 	assertToolTextContains(t, statusResp, "agent_name:")
 
 	callTool(t, mcp, 4, "chanwire_register_agent", map[string]any{"agent_name": bob})
@@ -94,7 +94,7 @@ func TestMCPFlow(t *testing.T) {
 	callTool(t, mcp, 5, "chanwire_status", map[string]any{})
 	registeredStatusResp := mcp.waitResponse(5)
 	assertNoRPCError(t, registeredStatusResp)
-	assertToolTextContains(t, registeredStatusResp, "agent_name:      "+bob)
+	assertToolTextContains(t, registeredStatusResp, "agent_name:        "+bob)
 
 	callTool(t, mcp, 6, "chanwire_list_agents", map[string]any{})
 	listResp := mcp.waitResponse(6)
