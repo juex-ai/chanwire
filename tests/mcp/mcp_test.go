@@ -152,7 +152,7 @@ func TestMCPFlow(t *testing.T) {
 	historyNotification := mcp2.waitNotification("notifications/claude/channel", func(params map[string]any) bool {
 		content, _ := params["content"].(string)
 		return strings.Contains(content, "history batch: one-time review") &&
-			strings.Contains(content, "[history] from "+alice) &&
+			strings.Contains(content, "[history]  from "+alice) &&
 			strings.Contains(content, bobHistoryContent)
 	})
 	assertChannelEvent(t, historyNotification, "message", bobHistoryContent)

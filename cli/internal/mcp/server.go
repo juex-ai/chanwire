@@ -466,7 +466,7 @@ func formatFrame(kind string, frame *client.Frame) string {
 func formatHistoryBatch(messages []client.HistoryMessage) string {
 	lines := []string{fmt.Sprintf("[history batch: one-time review, %d %s]", len(messages), pluralize("message", len(messages)))}
 	for _, msg := range messages {
-		lines = append(lines, fmt.Sprintf("[history] from %s at %s: %s", msg.FromAgent, safeISO(msg.SentAt), msg.Content))
+		lines = append(lines, fmt.Sprintf("[history]  from %s at %s: %s", msg.FromAgent, safeFrameTS(&msg.SentAt), msg.Content))
 	}
 	return strings.Join(lines, "\n")
 }

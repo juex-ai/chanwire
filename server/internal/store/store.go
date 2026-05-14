@@ -289,26 +289,28 @@ func (s *Store) GetMessagesForAgent(ctx context.Context, toAgentID int64) ([]Mes
 // GetRecentMessagesForAgent returns the latest limit messages for toAgentID in
 // chronological order. A non-positive limit returns all messages.
 func (s *Store) GetRecentMessagesForAgent(ctx context.Context, toAgentID int64, limit int) ([]Message, error) {
-	limitClause := ""
+	query := `SELECT m.id, m.from_agent_id, a.name AS from_agent, m.to_agent_id, m.content, m.created_at
+		   FROM messages m
+		   JOIN agents a ON a.id = m.from_agent_id
+		  WHERE m.to_agent_id = ?
+		  ORDER BY m.id ASC`
 	args := []any{toAgentID}
-	if limit > 0 {
-		limitClause = "LIMIT ?"
-		args = append(args, limit)
-	}
 
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, from_agent_id, from_agent, to_agent_id, content, created_at
+	if limit > 0 {
+		query = `SELECT id, from_agent_id, from_agent, to_agent_id, content, created_at
 		   FROM (
 		         SELECT m.id, m.from_agent_id, a.name AS from_agent, m.to_agent_id, m.content, m.created_at
 		           FROM messages m
 		           JOIN agents a ON a.id = m.from_agent_id
 		          WHERE m.to_agent_id = ?
 		          ORDER BY m.id DESC
-		          `+limitClause+`
+		          LIMIT ?
 		        )
-		  ORDER BY id ASC`,
-		args...,
-	)
+		  ORDER BY id ASC`
+		args = append(args, limit)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
