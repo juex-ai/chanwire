@@ -96,7 +96,7 @@ func absolutePath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolving path %s: %w", path, err)
 	}
-	return filepath.Clean(abs), nil
+	return abs, nil
 }
 
 func appendConfigChanwire(path string) string {
@@ -111,7 +111,7 @@ func appendConfigChanwire(path string) string {
 }
 
 func hasParentTraversal(path string) bool {
-	for _, part := range strings.Split(path, string(filepath.Separator)) {
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
 		if part == ".." {
 			return true
 		}
