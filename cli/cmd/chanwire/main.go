@@ -15,6 +15,7 @@ import (
 
 	"github.com/juex-ai/chanwire/cli/internal/client"
 	"github.com/juex-ai/chanwire/cli/internal/config"
+	"github.com/juex-ai/chanwire/cli/internal/mcp"
 	"github.com/juex-ai/chanwire/cli/internal/store"
 )
 
@@ -44,8 +45,20 @@ func rootCmd() *cobra.Command {
 	root.AddCommand(agentCmd())
 	root.AddCommand(msgCmd())
 	root.AddCommand(connectCmd())
+	root.AddCommand(mcpCmd())
 
 	return root
+}
+
+func mcpCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "mcp",
+		Short: "Run the chanwire MCP server (stdio)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			srv := mcp.NewServer()
+			return srv.Run(cmd.Context())
+		},
+	}
 }
 
 // ── version ──────────────────────────────────────────────────────────────────

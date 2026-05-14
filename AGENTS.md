@@ -11,9 +11,9 @@ internals see `ARCHITECTURE.md`; for the philosophy behind the model see
 ## Repo layout
 
 - `server/`  — Go module, its own `go.mod`. Hertz + SQLite. **No code shared with `cli/`.**
-- `cli/`     — Go module, its own `go.mod`. cobra-based.
-- `plugin/`  — Claude Code plugin. Repo doubles as the marketplace and the plugin.
+- `cli/`     — Go module, its own `go.mod`. cobra-based, includes the `mcp` stdio server subcommand.
 - `scripts/` — `build.sh` / `start_local.sh` / `install_local.sh`. Bash, `set -euo pipefail`.
+- `tests/`   — real E2E tests. `tests/run.sh` builds binaries, starts an isolated local server, then runs API, CLI, and MCP flows.
 - `docs/`    — long-form notes; `docs/specs/` for design specs.
 - `.log/`    — local server logs (gitignored).
 
@@ -29,4 +29,4 @@ internals see `ARCHITECTURE.md`; for the philosophy behind the model see
 
 Tasks are tracked with [`taskline`](https://github.com/your-org/taskline) under project name `chanwire`. Each task moves through `created → design → dev → review → done`. Branch per task, minimal commits, PR before merging to `main`.
 
-Run `./scripts/build.sh` to build both binaries. Run `./scripts/start_local.sh` to launch the server in the background. Logs land in `.log/`.
+Run `./scripts/build.sh` to build both binaries. Run `./scripts/start_local.sh` to launch the server in the background. Logs land in `.log/`. Run `./tests/run.sh all` for isolated API + CLI + MCP E2E validation.

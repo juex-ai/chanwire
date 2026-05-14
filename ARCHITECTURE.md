@@ -3,19 +3,19 @@
 ## Components
 
 ```
-+-------------------+         +---------------------+
-|  cli (chanwire)   | <-----> |    server (Hertz)   |
-+-------------------+   HTTP  |                     |
-                              |  +---------------+  |
-+-------------------+   WS    |  |  message hub  |  |
-| plugin (MCP +     | <-----> |  +-------+-------+  |
-|   chanwire conn)  |         |          |          |
-+-------------------+         |          v          |
-                              |    SQLite (file)    |
-                              +---------------------+
++---------------------+         +---------------------+
+|  cli (chanwire)     | <-----> |    server (Hertz)   |
+|  - agent commands   |   HTTP  |                     |
+|  - msg commands     |         |  +---------------+  |
+|  - connect          |   WS    |  |  message hub  |  |
+|  - mcp (server)     | <-----> |  +-------+-------+  |
++---------------------+         |          |          |
+                                |          v          |
+                                |    SQLite (file)    |
+                                +---------------------+
 ```
 
-The CLI and plugin both speak the same HTTP + WebSocket protocol; the plugin shells out to the CLI binary instead of reimplementing the wire.
+The CLI speaks HTTP + WebSocket protocol to the server. The `mcp` subcommand runs an MCP server that exposes tools and streams messages via claude/channel notifications.
 
 ## Server
 
@@ -89,15 +89,6 @@ All frames are JSON.
 
 ## CLI
 
-- `cobra` root, sub-commands `version`, `agent register`, `agent list`, `msg send`, `connect`.
+- `cobra` root, sub-commands `version`, `agent register`, `agent list`, `msg send`, `connect`, `mcp`.
 - Token store: `$CHANWIRE_DIR/agent.json` with `{agent_name, token, endpoint}`.
 - Reconnect backoff (seconds): `1, 5, 15, 30, 60, 120`, capped at `120`; resets on successful connect.
-
-## Plugin
-
-- Repo root holds `.claude-plugin/marketplace.json`; `plugin/` holds the plugin manifest and the MCP server. The same git repo is therefore both the marketplace and the plugin distribution.
-- MCP server (Node) exposes three tools that shell out to `chanwire`:
-  - `chanwire_register_agent({agent_name})`
-  - `chanwire_list_agents()`
-  - `chanwire_send_msg({to_agent, content})`
-- On startup the plugin also spawns `chanwire connect` and pipes its output into Claude Code's channels surface.

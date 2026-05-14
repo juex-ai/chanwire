@@ -9,6 +9,7 @@ bin/
 # Local dev
 .env
 .env.local
+.cache/
 .log/
 
 # IDE / agent harness (local, machine-specific)
