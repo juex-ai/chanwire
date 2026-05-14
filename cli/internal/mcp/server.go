@@ -35,11 +35,12 @@ type Server struct {
 	agentInfo     *store.AgentInfo
 	blocked       bool
 	version       string
+	channel       bool
 }
 
 // NewServer creates a new MCP server
-func NewServer(version string) *Server {
-	return &Server{version: version}
+func NewServer(version string, channel bool) *Server {
+	return &Server{version: version, channel: channel}
 }
 
 // Run starts the MCP server and runs until context is cancelled
@@ -70,7 +71,7 @@ Incoming messages from other agents arrive as <channel source="chanwire" event_t
 
 ## Important
 - If you see a "not registered" channel event, call chanwire_register_agent before sending messages.
-- Messages stream automatically once registered; no polling needed.`,
+- Messages stream automatically only when the MCP server was started with --channel.`,
 		Capabilities: &mcp.ServerCapabilities{
 			Tools:        &mcp.ToolCapabilities{ListChanged: true},
 			Experimental: map[string]any{"claude/channel": map[string]any{}},
@@ -141,9 +142,12 @@ func (s *Server) handleStatus(ctx context.Context) (*mcp.CallToolResult, any, er
 
 // onInitialized is called when the client sends the initialized notification
 func (s *Server) onInitialized(ctx context.Context, req *mcp.InitializedRequest) {
-	s.log("client initialized — starting connect")
+	s.log("client initialized")
 	s.setSession(req.Session)
-	s.startConnect(ctx)
+	if s.channel {
+		s.log("channel enabled — starting connect")
+		s.startConnect(ctx)
+	}
 }
 
 // setSession stores the server session when connected
@@ -193,7 +197,9 @@ func (s *Server) handleRegisterAgent(ctx context.Context, agentName string) (*mc
 	s.blocked = false
 	s.mu.Unlock()
 
-	s.resetConnect(ctx)
+	if s.channel {
+		s.resetConnect(ctx)
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{

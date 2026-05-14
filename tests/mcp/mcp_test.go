@@ -33,7 +33,7 @@ func TestMCPFlow(t *testing.T) {
 	defer aliceConn.Close()
 
 	mcpDataDir := t.TempDir()
-	mcp := startMCPServer(t, bin, endpoint, mcpDataDir)
+	mcp := startMCPServer(t, bin, endpoint, mcpDataDir, true)
 	mcp.send(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -128,7 +128,7 @@ func TestMCPFlow(t *testing.T) {
 	mcp.stop()
 	e2e.SendMessage(t, endpoint, aliceToken, bob, bobHistoryContent, http.StatusOK)
 
-	mcp2 := startMCPServer(t, bin, endpoint, mcpDataDir)
+	mcp2 := startMCPServer(t, bin, endpoint, mcpDataDir, true)
 	mcp2.send(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      8,
@@ -158,6 +158,49 @@ func TestMCPFlow(t *testing.T) {
 	assertChannelEvent(t, historyNotification, "message", bobHistoryContent)
 }
 
+func TestMCPWithoutChannelDoesNotStream(t *testing.T) {
+	endpoint := e2e.Endpoint()
+	bin := e2e.Binary(t)
+
+	mcp := startMCPServer(t, bin, endpoint, t.TempDir(), false)
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    map[string]any{},
+			"clientInfo": map[string]any{
+				"name":    "chanwire-e2e",
+				"version": "test",
+			},
+		},
+	})
+	assertNoRPCError(t, mcp.waitResponse(1))
+
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+		"params":  map[string]any{},
+	})
+	mcp.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
+
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "tools/list",
+		"params":  map[string]any{},
+	})
+	toolsResp := mcp.waitResponse(2)
+	assertNoRPCError(t, toolsResp)
+	assertToolNames(t, toolsResp, []string{
+		"chanwire_register_agent",
+		"chanwire_list_agents",
+		"chanwire_send_msg",
+		"chanwire_status",
+	})
+}
+
 func callTool(t *testing.T, c *stdioMCP, id int, name string, args map[string]any) {
 	t.Helper()
 	c.send(map[string]any{
@@ -183,11 +226,15 @@ type stdioMCP struct {
 	backlog []rpcMessage
 }
 
-func startMCPServer(t *testing.T, bin, endpoint, dataDir string) *stdioMCP {
+func startMCPServer(t *testing.T, bin, endpoint, dataDir string, channel bool) *stdioMCP {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, bin, "mcp")
+	args := []string{"mcp"}
+	if channel {
+		args = append(args, "--channel")
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = e2e.Env(endpoint, dataDir)
 
 	stdin, err := cmd.StdinPipe()
@@ -298,6 +345,28 @@ func (c *stdioMCP) waitNotification(method string, pred func(map[string]any) boo
 		params, ok := msg["params"].(map[string]any)
 		return ok && pred(params)
 	})
+}
+
+func (c *stdioMCP) assertNoNotification(method string, timeout time.Duration) {
+	c.t.Helper()
+
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+
+	for {
+		select {
+		case msg, ok := <-c.msgs:
+			if !ok {
+				c.t.Fatalf("MCP stdout closed while checking for absent notification\nstderr:\n%s", c.stderr.String())
+			}
+			if msg["method"] == method {
+				c.t.Fatalf("unexpected MCP notification %s: %+v\nstderr:\n%s", method, msg, c.stderr.String())
+			}
+			c.backlog = append(c.backlog, msg)
+		case <-deadline.C:
+			return
+		}
+	}
 }
 
 func (c *stdioMCP) waitFor(timeout time.Duration, pred func(rpcMessage) bool) rpcMessage {

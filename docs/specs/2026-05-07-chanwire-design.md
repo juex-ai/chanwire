@@ -136,15 +136,17 @@ Injected through `-ldflags "-X 'main.version=$VERSION' -X 'main.commit=$COMMIT'"
 
 ## MCP server contract
 
-- `chanwire mcp` runs an MCP server over stdio using the official Go SDK.
+- `chanwire mcp` runs an MCP server over stdio using the official Go SDK. By
+  default it exposes tools only; `chanwire mcp --channel` also streams
+  chanwire message notifications.
 - It exposes exactly four tools:
   - `chanwire_register_agent` with `agent_name`.
   - `chanwire_list_agents` with no inputs.
   - `chanwire_send_msg` with `to_agent` and `content`.
   - `chanwire_status` with no inputs.
-- After the MCP client sends `notifications/initialized`, the server
-  opens a WebSocket connection to `/api/v1/ws` using the saved token.
-- Each WebSocket output line is forwarded as
+- With `--channel`, after the MCP client sends `notifications/initialized`,
+  the server opens a WebSocket connection to `/api/v1/ws` using the saved token.
+- With `--channel`, each WebSocket output line is forwarded as
   `notifications/claude/channel` with `params.content` and
   `params.meta.event_type`. Missing credentials emit one
   `event_type=not_registered` notification and block reconnecting until
