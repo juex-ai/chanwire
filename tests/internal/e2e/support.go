@@ -154,31 +154,75 @@ func DialWS(t *testing.T, endpoint, token string) *websocket.Conn {
 	return conn
 }
 
-func ReadUntilHistoryDone(t *testing.T, conn *websocket.Conn, wantContent string) bool {
+func ReadHistoryBatch(t *testing.T, conn *websocket.Conn, wantContent string) bool {
 	t.Helper()
 
-	found := false
 	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		frame := readWSFrame(t, conn, deadline)
-		if frame.Type == "history" {
-			if frame.Content == wantContent {
-				found = true
-			}
-		}
-		if frame.Type == "history_batch" {
-			for _, msg := range frame.Messages {
-				if msg.Content == wantContent {
-					found = true
-				}
-			}
-		}
-		if frame.Type == "history_done" {
-			return found
+	frame := readWSFrame(t, conn, deadline)
+	if frame.Type != "history_batch" {
+		t.Fatalf("first websocket frame: want history_batch, got %+v", frame)
+	}
+	for _, msg := range frame.Messages {
+		if msg.Content == wantContent {
+			return true
 		}
 	}
-	t.Fatalf("timed out before history_done")
 	return false
+}
+
+func WaitForRealtimeReady(t *testing.T, endpoint, token, toAgent string, conn *websocket.Conn) {
+	t.Helper()
+
+	prefix := "ready probe " + UniqueSuffix()
+	got := make(chan WSFrame, 1)
+	errs := make(chan error, 1)
+
+	if err := conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatalf("set websocket read deadline: %v", err)
+	}
+	go func() {
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				errs <- err
+				return
+			}
+			var frame WSFrame
+			if err := json.Unmarshal(raw, &frame); err != nil {
+				errs <- fmt.Errorf("decode websocket frame %s: %w", raw, err)
+				return
+			}
+			if frame.Type == "realtime" && strings.HasPrefix(frame.Content, prefix) {
+				got <- frame
+				return
+			}
+		}
+	}()
+
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
+
+	attempt := 0
+	for {
+		content := fmt.Sprintf("%s %d", prefix, attempt)
+		SendMessage(t, endpoint, token, toAgent, content, http.StatusOK)
+		attempt++
+
+		select {
+		case <-got:
+			if err := conn.SetReadDeadline(time.Time{}); err != nil {
+				t.Fatalf("clear websocket read deadline: %v", err)
+			}
+			return
+		case err := <-errs:
+			t.Fatalf("read websocket ready probe: %v", err)
+		case <-ticker.C:
+		case <-timeout.C:
+			t.Fatalf("timed out waiting for websocket realtime readiness")
+		}
+	}
 }
 
 func ReadMatchingFrame(t *testing.T, conn *websocket.Conn, frameType, content string) WSFrame {

@@ -32,9 +32,10 @@ func TestServerAPIFlow(t *testing.T) {
 	conn := e2e.DialWS(t, endpoint, bobToken)
 	defer conn.Close()
 
-	if !e2e.ReadUntilHistoryDone(t, conn, offlineContent) {
+	if !e2e.ReadHistoryBatch(t, conn, offlineContent) {
 		t.Fatalf("websocket history did not include %q", offlineContent)
 	}
+	e2e.WaitForRealtimeReady(t, endpoint, aliceToken, bob, conn)
 
 	e2e.SendMessage(t, endpoint, aliceToken, bob, realtimeContent, http.StatusOK)
 	frame := e2e.ReadMatchingFrame(t, conn, "realtime", realtimeContent)

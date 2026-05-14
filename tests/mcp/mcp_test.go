@@ -89,9 +89,7 @@ func TestMCPFlow(t *testing.T) {
 	assertNoRPCError(t, registerResp)
 	assertToolTextContains(t, registerResp, "registered: agent_name="+bob)
 
-	mcp.waitNotification("notifications/claude/channel", func(params map[string]any) bool {
-		return params["content"] == "-- end of history --"
-	})
+	waitForAgentActive(t, endpoint, aliceToken, bob)
 
 	callTool(t, mcp, 5, "chanwire_status", map[string]any{})
 	registeredStatusResp := mcp.waitResponse(5)
@@ -156,6 +154,7 @@ func TestMCPFlow(t *testing.T) {
 			strings.Contains(content, bobHistoryContent)
 	})
 	assertChannelEvent(t, historyNotification, "message", bobHistoryContent)
+	mcp2.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
 }
 
 func TestMCPWithoutChannelDoesNotStream(t *testing.T) {
@@ -212,6 +211,21 @@ func callTool(t *testing.T, c *stdioMCP, id int, name string, args map[string]an
 			"arguments": args,
 		},
 	})
+}
+
+func waitForAgentActive(t *testing.T, endpoint, token, agentName string) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, agent := range e2e.ListAgents(t, endpoint, token) {
+			if agent.AgentName == agentName && agent.LastActiveAt != nil {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for agent %q to become active", agentName)
 }
 
 type rpcMessage map[string]any

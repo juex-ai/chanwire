@@ -2,6 +2,7 @@ package cli
 
 import (
 	"testing"
+	"time"
 
 	"github.com/juex-ai/chanwire/tests/internal/e2e"
 )
@@ -38,7 +39,7 @@ func TestCLIFlow(t *testing.T) {
 	connect.WaitForLine(t, "-- history batch (one-time review, 1 message) --")
 	connect.WaitForLine(t, offlineContent)
 	connect.WaitForLine(t, "-- end history batch --")
-	connect.WaitForLine(t, "-- end of history --")
+	connect.AssertNoLine(t, "-- end of history --", 500*time.Millisecond)
 
 	out = e2e.RunCLI(t, bin, endpoint, aliceDir, "msg", "send", "--to_agent", bob, "--content", realtimeContent)
 	e2e.AssertContains(t, out, "ok: message_id=")

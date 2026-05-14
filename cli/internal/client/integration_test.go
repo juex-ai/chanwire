@@ -204,7 +204,6 @@ func TestWSFrames(t *testing.T) {
 		}{
 			{MessageID: &id1, FromAgent: "alice", Content: "hello history", SentAt: &ts1},
 		}},
-		{Type: "history_done"},
 		{Type: "realtime", MessageID: &id2, FromAgent: "bob", Content: "hello realtime", SentAt: &ts2},
 	}
 
@@ -247,7 +246,6 @@ func TestWSFrames(t *testing.T) {
 		"-- history batch (one-time review, 1 message) --",
 		"[history]  from alice at " + t1 + ": hello history",
 		"-- end history batch --",
-		"-- end of history --",
 		"[realtime] from bob at " + t2 + ": hello realtime",
 	}
 
@@ -255,6 +253,9 @@ func TestWSFrames(t *testing.T) {
 		if !strings.Contains(output, line) {
 			t.Errorf("output missing line %q\nfull output:\n%s", line, output)
 		}
+	}
+	if strings.Contains(output, "-- end of history --") {
+		t.Errorf("extra history-end marker should not be printed\nfull output:\n%s", output)
 	}
 }
 

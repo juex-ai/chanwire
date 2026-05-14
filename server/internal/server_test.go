@@ -166,6 +166,23 @@ func readFrame(t *testing.T, conn *websocket.Conn) proto.Frame {
 	return f
 }
 
+func assertNoFrame(t *testing.T, conn *websocket.Conn, timeout time.Duration) {
+	t.Helper()
+	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	if _, msg, err := conn.ReadMessage(); err == nil {
+		var f proto.Frame
+		if err := json.Unmarshal(msg, &f); err != nil {
+			t.Fatalf("unexpected non-json WS frame %q", msg)
+		}
+		t.Fatalf("unexpected WS frame: %+v", f)
+	}
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatalf("clear read deadline: %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -293,7 +310,7 @@ func TestMsgSendUnknownAgent(t *testing.T) {
 	}
 }
 
-// 6. WS connect: receives recent history as one batch, then history_done, then realtime.
+// 6. WS connect: receives recent history as one batch, then realtime.
 func TestWSHistoryAndRealtime(t *testing.T) {
 	baseURL, cleanup := testServer(t)
 	defer cleanup()
@@ -324,12 +341,7 @@ func TestWSHistoryAndRealtime(t *testing.T) {
 			t.Fatalf("history batch message %d: got %q want %q", i, f1.Messages[i].Content, want)
 		}
 	}
-
-	// history_done.
-	fd := readFrame(t, conn)
-	if fd.Type != "history_done" {
-		t.Fatalf("expected history_done, got %+v", fd)
-	}
+	time.Sleep(50 * time.Millisecond)
 
 	// Now Alice sends another message — Bob should get it as realtime.
 	doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: "realtime-msg"})
@@ -338,6 +350,25 @@ func TestWSHistoryAndRealtime(t *testing.T) {
 	if fr.Type != "realtime" || fr.Content != "realtime-msg" {
 		t.Fatalf("realtime frame: want realtime/realtime-msg, got %+v", fr)
 	}
+}
+
+func TestWSDoesNotSendHistoryDone(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	tokenA := register(t, baseURL, "alice")
+	tokenB := register(t, baseURL, "bob")
+
+	doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: "history-only"})
+
+	conn := dialWS(t, baseURL, tokenB)
+	defer conn.Close()
+
+	f := readFrame(t, conn)
+	if f.Type != "history_batch" || len(f.Messages) != 1 || f.Messages[0].Content != "history-only" {
+		t.Fatalf("history replay: want one history_batch, got %+v", f)
+	}
+	assertNoFrame(t, conn, 100*time.Millisecond)
 }
 
 // 7. Two concurrent WS conns for same agent: realtime fanout to both.
@@ -354,17 +385,7 @@ func TestWSFanout(t *testing.T) {
 	conn2 := dialWS(t, baseURL, tokenB)
 	defer conn2.Close()
 
-	// Drain history_done for both (no history yet).
-	drainToDone := func(conn *websocket.Conn) {
-		for {
-			f := readFrame(t, conn)
-			if f.Type == "history_done" {
-				return
-			}
-		}
-	}
-	drainToDone(conn1)
-	drainToDone(conn2)
+	time.Sleep(50 * time.Millisecond)
 
 	// Alice sends to Bob.
 	doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{ToAgent: "bob", Content: "fanout"})
@@ -426,10 +447,5 @@ func TestOfflineThenOnline(t *testing.T) {
 	f := readFrame(t, conn)
 	if f.Type != "history_batch" || len(f.Messages) != 1 || f.Messages[0].Content != "offline-msg" {
 		t.Fatalf("offline→online: want history_batch/offline-msg, got %+v", f)
-	}
-
-	fd := readFrame(t, conn)
-	if fd.Type != "history_done" {
-		t.Fatalf("expected history_done, got %+v", fd)
 	}
 }

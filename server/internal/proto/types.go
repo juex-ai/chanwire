@@ -49,7 +49,7 @@ type HistoryMessage struct {
 }
 
 // Frame is a server-to-client WebSocket message.
-// Type is one of "history_batch", "realtime", "history_done".
+// Type is one of "history_batch", "realtime".
 type Frame struct {
 	Type      string           `json:"type"`
 	MessageID *int64           `json:"message_id,omitempty"`

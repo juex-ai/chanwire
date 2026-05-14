@@ -103,6 +103,27 @@ func (c *CLIConnect) WaitForLine(t *testing.T, contains string) string {
 	}
 }
 
+func (c *CLIConnect) AssertNoLine(t *testing.T, contains string, timeout time.Duration) {
+	t.Helper()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case line, ok := <-c.lines:
+			if !ok {
+				return
+			}
+			if strings.Contains(line, contains) {
+				t.Fatalf("unexpected connect line containing %q: %s\nstderr:\n%s", contains, line, c.stderr.String())
+			}
+		case <-timer.C:
+			return
+		}
+	}
+}
+
 func (c *CLIConnect) Stop() {
 	c.cancel()
 	select {
