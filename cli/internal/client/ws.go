@@ -22,6 +22,9 @@ type Frame struct {
 	SentAt    *int64 `json:"sent_at,omitempty"`
 }
 
+// FrameHandler receives decoded WebSocket frames.
+type FrameHandler func(*Frame)
+
 // Waiter blocks for the requested duration or until ctx is cancelled.
 // It returns ctx.Err() if cancelled, otherwise nil. Replaced in tests
 // to avoid real waits.
@@ -93,7 +96,7 @@ func (e *connResetError) Error() string {
 //     sequence on a successful WS handshake (101)").
 //   - Handshake succeeds and ctx is cancelled before/while reading:
 //     returns nil (clean shutdown).
-func (c *WSClient) runOnce(ctx context.Context, url string, w io.Writer) error {
+func (c *WSClient) runOnce(ctx context.Context, url string, handle FrameHandler) error {
 	hdr := http.Header{}
 	hdr.Set("Authorization", "Bearer "+c.token)
 
@@ -119,10 +122,10 @@ func (c *WSClient) runOnce(ctx context.Context, url string, w io.Writer) error {
 		}
 	}()
 
-	return c.readLoop(ctx, conn, w)
+	return c.readLoop(ctx, conn, handle)
 }
 
-func (c *WSClient) readLoop(ctx context.Context, conn *websocket.Conn, w io.Writer) error {
+func (c *WSClient) readLoop(ctx context.Context, conn *websocket.Conn, handle FrameHandler) error {
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
@@ -139,7 +142,7 @@ func (c *WSClient) readLoop(ctx context.Context, conn *websocket.Conn, w io.Writ
 			continue
 		}
 
-		printFrame(w, &frame)
+		handle(&frame)
 	}
 }
 
@@ -168,6 +171,18 @@ func formatTS(ms *int64) string {
 // start of the sequence after every successful WS handshake (101). Runs until
 // ctx is cancelled.
 func (c *WSClient) ConnectWithReset(ctx context.Context, w io.Writer) error {
+	return c.ConnectFramesWithReset(ctx, func(f *Frame) {
+		printFrame(w, f)
+	})
+}
+
+// ConnectFramesWithReset opens a WebSocket, passes incoming frames to handle,
+// and reconnects with the same backoff behavior as ConnectWithReset.
+func (c *WSClient) ConnectFramesWithReset(ctx context.Context, handle FrameHandler) error {
+	if handle == nil {
+		handle = func(*Frame) {}
+	}
+
 	bo := backoff.New()
 	url := wsURL(c.baseURL)
 
@@ -176,7 +191,7 @@ func (c *WSClient) ConnectWithReset(ctx context.Context, w io.Writer) error {
 			return ctx.Err()
 		}
 
-		err := c.runOnce(ctx, url, w)
+		err := c.runOnce(ctx, url, handle)
 
 		// Stop if ctx was cancelled (regardless of error).
 		if ctx.Err() != nil {

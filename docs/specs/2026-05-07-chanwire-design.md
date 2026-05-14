@@ -1,10 +1,10 @@
 # chanwire — design spec (2026-05-07)
 
 This is the cross-cutting reference for parallel implementation work on
-`server` (T2), `cli` (T3), `scripts` (T4), and `plugin` (T5). It locks
-down the contract between the components so each can be built without
-co-design rounds. When this document and a subtask description disagree,
-this document wins — file an update PR rather than diverging silently.
+`server` (T2), `cli` (T3), and `scripts` (T4). It locks down the
+contract between the components so each can be built without co-design
+rounds. When this document and a subtask description disagree, this
+document wins — file an update PR rather than diverging silently.
 
 ## Wire protocol
 
@@ -116,16 +116,20 @@ Both binaries embed:
 
 Injected through `-ldflags "-X 'main.version=$VERSION' -X 'main.commit=$COMMIT'"`.
 
-## Plugin contract
+## MCP server contract
 
-- The plugin assumes `chanwire` is on `$PATH`.
-- MCP tools simply exec the CLI; they pass through stdout for
-  `register`, parse stdout JSON for `list`, and check the exit code
-  for `send`. The CLI must therefore emit JSON on stdout for `agent
-  list` (a `--json` flag is fine, default human-readable is also
-  fine — pick one and document it; the plugin will adapt).
-- The plugin spawns `chanwire connect` once at startup and forwards
-  each line on its stdout into a Claude Code channel.
+- `chanwire mcp` runs an MCP server over stdio using the official Go SDK.
+- It exposes exactly three tools:
+  - `chanwire_register_agent` with `agent_name`.
+  - `chanwire_list_agents` with no inputs.
+  - `chanwire_send_msg` with `to_agent` and `content`.
+- After the MCP client sends `notifications/initialized`, the server
+  opens a WebSocket connection to `/api/v1/ws` using the saved token.
+- Each WebSocket output line is forwarded as
+  `notifications/claude/channel` with `params.content` and
+  `params.meta.event_type`. Missing credentials emit one
+  `event_type=not_registered` notification and block reconnecting until
+  `chanwire_register_agent` succeeds.
 
 ## Out of scope (do not implement)
 

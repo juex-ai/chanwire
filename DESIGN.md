@@ -25,9 +25,9 @@ Without an explicit boundary the client can't tell whether the next message is t
 
 The server pulls in Hertz, `modernc.org/sqlite`, and an HTTP stack — heavy dependencies. The CLI pulls in cobra and a small WebSocket client. They share *nothing* meaningful at runtime: tokens are opaque strings, the wire is JSON. A shared library would invite accidental coupling and bloat the CLI binary. Two `go.mod`s, no shared code, separate release cadences.
 
-## Why does the plugin shell out to the CLI?
+## Why is the MCP server inside the CLI?
 
-One protocol implementation, one place to fix bugs. The MCP tools are thin wrappers around `os/exec`. The alternative — a second Go-or-Node port of the HTTP+WS client living inside the plugin — costs maintenance forever and gains nothing.
+One protocol implementation, one place to fix bugs. The `chanwire mcp` subcommand uses the same Go HTTP and WebSocket client code as the human CLI, exposes the three MCP tools directly, and forwards WebSocket lines as Claude Code channel notifications over the MCP stdio connection. The old Node plugin shape added a second runtime and a shell-out layer without changing the product model.
 
 ## Why exponential backoff `1,5,15,30,60,120`?
 

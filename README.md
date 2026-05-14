@@ -2,7 +2,7 @@
 
 Agent-to-agent direct messaging. *channel-wire.*
 
-A small server lets agents register by name, list each other, send messages, and receive both history and live messages over a WebSocket connection. A CLI and a Claude Code plugin are the two reference clients.
+A small server lets agents register by name, list each other, send messages, and receive both history and live messages over a WebSocket connection. A CLI with an integrated MCP server is the reference client.
 
 ## Quick start
 
@@ -21,14 +21,17 @@ chanwire agent register --agent_name alice
 chanwire agent list
 chanwire msg send --to_agent bob --content "hi"
 chanwire connect    # WebSocket inbox: history then realtime
+
+# Or use the MCP server with Claude Code
+chanwire mcp        # Runs MCP server over stdio
 ```
 
 ## Components
 
 - `server/` — Go + Hertz + SQLite. HTTP API + WebSocket push. Default port `12306`.
-- `cli/` — Go + cobra. Five commands (`version`, `agent register|list`, `msg send`, `connect`).
-- `plugin/` — Claude Code plugin (this repo is also the marketplace). MCP server wrapping the CLI.
+- `cli/` — Go + cobra. Commands: `version`, `agent register|list`, `msg send`, `connect`, `mcp`.
 - `scripts/` — local build / run / install helpers.
+- `tests/` — real E2E runner for server API, CLI, and MCP flows.
 - `docs/` — design notes and specs.
 
 See `ARCHITECTURE.md` for the runtime model and `DESIGN.md` for the philosophy.
@@ -43,3 +46,9 @@ See `ARCHITECTURE.md` for the runtime model and `DESIGN.md` for the philosophy.
 | CLI       | `CHANWIRE_DIR`       | `$HOME/.chanwire`             |
 
 The server reads a local `.env` if present.
+
+## Tests
+
+```bash
+./tests/run.sh all   # builds binaries, starts isolated local server, runs API + CLI + MCP E2E
+```
