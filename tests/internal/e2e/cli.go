@@ -103,7 +103,10 @@ func (c *CLIConnect) WaitForLine(t *testing.T, contains string) string {
 	}
 }
 
-func (c *CLIConnect) AssertNoLine(t *testing.T, contains string, timeout time.Duration) {
+// AssertNoFurtherLineContaining is only for terminal checks where no later
+// stdout lines are expected before the next test action. It consumes lines
+// while watching for the forbidden substring.
+func (c *CLIConnect) AssertNoFurtherLineContaining(t *testing.T, contains string, timeout time.Duration) {
 	t.Helper()
 
 	timer := time.NewTimer(timeout)
