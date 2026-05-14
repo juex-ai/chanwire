@@ -43,7 +43,12 @@ See `ARCHITECTURE.md` for the runtime model and `DESIGN.md` for the philosophy.
 | Server    | `CHANWIRE_PORT`      | `12306`                       |
 | Server    | `CHANWIRE_DB`        | `./data/chanwire.db`          |
 | CLI       | `CHANWIRE_ENDPOINT`  | `http://127.0.0.1:12306`      |
-| CLI       | `CHANWIRE_DIR`       | `$HOME/.chanwire`             |
+| CLI       | `CHANWIRE_DIR`       | `$HOME/.config/chanwire`      |
+
+CLI config directory priority is `--homedir`, then `CHANWIRE_DIR`, then the
+current user's home directory. The selected base is normalized to
+`.config/chanwire`: `/tmp/demo` becomes `/tmp/demo/.config/chanwire`, while a
+path already ending in `.config` becomes `<path>/chanwire`.
 
 The server reads a local `.env` if present.
 
