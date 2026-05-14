@@ -87,7 +87,9 @@ the same sequence).
 
 ## CLI ↔ server interaction
 
-- The CLI loads `$CHANWIRE_DIR/agent.json` to get its token. If the
+- The CLI loads `<resolved-config-dir>/agent.json` to get its token. The
+  config directory is resolved from `--homedir`, then `CHANWIRE_DIR`, then
+  the user's home directory, and normalized to `.config/chanwire`. If the
   file does not exist and a command needs auth, the CLI prints:
   ```
   not registered. run: chanwire agent register --agent_name <name>

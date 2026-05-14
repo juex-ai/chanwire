@@ -52,7 +52,7 @@ func TestVersionShowsSavedEndpoint(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CHANWIRE_DIR", dir)
 
-	agentJSON := filepath.Join(dir, "agent.json")
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
 	writeAgentJSON(t, agentJSON, "alice", "tok", "http://saved.example:9999")
 
 	stdout, _, err := runArgs("version")
@@ -61,6 +61,65 @@ func TestVersionShowsSavedEndpoint(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "http://saved.example:9999") {
 		t.Errorf("expected saved endpoint in output, got:\n%s", stdout)
+	}
+}
+
+func TestHomeDirFlagWinsOverEnvAndNormalizes(t *testing.T) {
+	envRoot := t.TempDir()
+	flagRoot := t.TempDir()
+	t.Setenv("CHANWIRE_DIR", envRoot)
+
+	stdout, _, err := runArgs("--homedir", flagRoot, "version")
+	if err != nil {
+		t.Fatalf("version --homedir: %v", err)
+	}
+
+	want := "CHANWIRE_DIR:     " + filepath.Join(flagRoot, ".config", "chanwire")
+	if !strings.Contains(stdout, want) {
+		t.Fatalf("expected %q in output, got:\n%s", want, stdout)
+	}
+	if strings.Contains(stdout, envRoot) {
+		t.Fatalf("expected --homedir to override CHANWIRE_DIR, got:\n%s", stdout)
+	}
+}
+
+func TestHomeDirFlagResolvesRelativeFromWorkingDirectory(t *testing.T) {
+	cwd := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	cwd, err = os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd after Chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+
+	stdout, _, err := runArgs("--homedir", ".", "version")
+	if err != nil {
+		t.Fatalf("version --homedir .: %v", err)
+	}
+
+	want := "CHANWIRE_DIR:     " + filepath.Join(cwd, ".config", "chanwire")
+	if !strings.Contains(stdout, want) {
+		t.Fatalf("expected %q in output, got:\n%s", want, stdout)
+	}
+}
+
+func TestHomeDirFlagRejectsParentTraversal(t *testing.T) {
+	_, _, err := runArgs("--homedir", filepath.Join("..", "other"), "version")
+	if err == nil {
+		t.Fatal("expected error for parent traversal, got nil")
+	}
+	if !strings.Contains(err.Error(), "..") {
+		t.Fatalf("expected error to mention '..', got: %v", err)
 	}
 }
 
@@ -84,7 +143,7 @@ func TestMsgSendMissingToAgent(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CHANWIRE_DIR", dir)
 
-	agentJSON := filepath.Join(dir, "agent.json")
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
 	writeAgentJSON(t, agentJSON, "alice", "tok", "http://127.0.0.1:19999")
 
 	_, _, err := runArgs("msg", "send", "--content", "hello")
@@ -101,7 +160,7 @@ func TestMsgSendMissingContent(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CHANWIRE_DIR", dir)
 
-	agentJSON := filepath.Join(dir, "agent.json")
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
 	writeAgentJSON(t, agentJSON, "alice", "tok", "http://127.0.0.1:19999")
 
 	_, _, err := runArgs("msg", "send", "--to_agent", "bob")
@@ -140,7 +199,7 @@ func TestMsgSend404ReturnsError(t *testing.T) {
 	t.Setenv("CHANWIRE_DIR", dir)
 	t.Setenv("CHANWIRE_ENDPOINT", srv.URL)
 
-	agentJSON := filepath.Join(dir, "agent.json")
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
 	writeAgentJSON(t, agentJSON, "alice", "tok", srv.URL)
 
 	_, _, err := runArgs("msg", "send", "--to_agent", "ghost", "--content", "hi")
@@ -164,7 +223,7 @@ func TestAgentListJSON(t *testing.T) {
 	t.Setenv("CHANWIRE_DIR", dir)
 	t.Setenv("CHANWIRE_ENDPOINT", srv.URL)
 
-	agentJSON := filepath.Join(dir, "agent.json")
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
 	writeAgentJSON(t, agentJSON, "alice", "tok", srv.URL)
 
 	stdout, _, err := runArgs("agent", "list", "--json")
@@ -206,7 +265,7 @@ func TestAgentListTable(t *testing.T) {
 	t.Setenv("CHANWIRE_DIR", dir)
 	t.Setenv("CHANWIRE_ENDPOINT", srv.URL)
 
-	agentJSON := filepath.Join(dir, "agent.json")
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
 	writeAgentJSON(t, agentJSON, "alice", "tok", srv.URL)
 
 	stdout, _, err := runArgs("agent", "list")
@@ -224,6 +283,9 @@ func TestAgentListTable(t *testing.T) {
 // writeAgentJSON writes a minimal agent.json for testing.
 func writeAgentJSON(t *testing.T, path, name, token, endpoint string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir agent dir: %v", err)
+	}
 	data := `{"agent_name":"` + name + `","token":"` + token + `","endpoint":"` + endpoint + `"}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatalf("writeAgentJSON: %v", err)

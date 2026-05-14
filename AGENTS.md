@@ -21,7 +21,7 @@ internals see `ARCHITECTURE.md`; for the philosophy behind the model see
 
 - Two Go modules. Do not factor a shared library. If duplication appears, copy first; only abstract once the shape is the same on both sides.
 - Server config via `.env`: `CHANWIRE_PORT` (default `12306`), `CHANWIRE_DB` (default `./data/chanwire.db`).
-- CLI config via env vars: `CHANWIRE_ENDPOINT` (default `http://127.0.0.1:12306`), `CHANWIRE_DIR` (default `$HOME/.chanwire`).
+- CLI config via `--homedir`, then `CHANWIRE_DIR`, then home. The final directory is normalized to `.config/chanwire`; `CHANWIRE_ENDPOINT` defaults to `http://127.0.0.1:12306`.
 - Authorization on every endpoint except `POST /api/v1/agent/register` is `Authorization: Bearer <token>`. WebSocket uses the same header.
 - Version metadata is build-time: `version` from `git describe --always --tags --dirty`, `commit` from `git rev-parse --short HEAD`, injected via `-ldflags`.
 

@@ -90,5 +90,5 @@ All frames are JSON.
 ## CLI
 
 - `cobra` root, sub-commands `version`, `agent register`, `agent list`, `msg send`, `connect`, `mcp`.
-- Token store: `$CHANWIRE_DIR/agent.json` with `{agent_name, token, endpoint}`.
+- Token store: `<resolved-config-dir>/agent.json` with `{agent_name, token, endpoint}`. The CLI resolves the config directory from `--homedir`, then `CHANWIRE_DIR`, then the user's home directory, and normalizes the result to `.config/chanwire`.
 - Reconnect backoff (seconds): `1, 5, 15, 30, 60, 120`, capped at `120`; resets on successful connect.

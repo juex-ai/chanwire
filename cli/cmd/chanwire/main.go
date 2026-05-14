@@ -34,12 +34,19 @@ func main() {
 }
 
 func rootCmd() *cobra.Command {
+	var homeDir string
+
 	root := &cobra.Command{
 		Use:   "chanwire",
 		Short: "chanwire — agent-to-agent messaging CLI",
 		// Don't print usage on errors; the sub-commands handle their own.
 		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return config.SetHomeDir(homeDir)
+		},
 	}
+
+	root.PersistentFlags().StringVar(&homeDir, "homedir", "", "Base directory for chanwire config; final path is .config/chanwire")
 
 	root.AddCommand(versionCmd())
 	root.AddCommand(agentCmd())
