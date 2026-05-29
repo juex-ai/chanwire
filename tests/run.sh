@@ -182,5 +182,8 @@ echo "e2e run dir:  $CHANWIRE_E2E_RUN_DIR"
 
 (
     cd tests
-    go test -count=1 -v "${test_packages[@]}"
+    # These suites share one isolated chanwire server and SQLite database.
+    # Run package test binaries sequentially so cross-suite setup does not
+    # contend on shared runtime state.
+    go test -p 1 -count=1 -v "${test_packages[@]}"
 )

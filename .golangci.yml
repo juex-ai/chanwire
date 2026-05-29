@@ -1,0 +1,25 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        # CLI/debug output errors are not actionable for this binary.
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # Test/fake-server response helpers; callers assert through client-side behavior.
+        - (*encoding/json.Decoder).Decode
+        - (*encoding/json.Encoder).Encode
+        - (*github.com/gorilla/websocket.Conn).SetReadDeadline
+        - (*github.com/gorilla/websocket.Conn).WriteMessage
+        - (*github.com/juex-ai/chanwire/cli/internal/client.WSClient).ConnectWithReset
+        - (net/http.ResponseWriter).Write
+        # Best-effort cleanup; substantive close failures are checked inline.
+        - (*database/sql.Rows).Close
+        - (*github.com/gorilla/websocket.Conn).Close
+        - (io.ReadCloser).Close
+        - (io.WriteCloser).Close
+        - (net.Listener).Close
+        - (*os.File).Close
+        - (*github.com/juex-ai/chanwire/server/internal/store.Store).Close
