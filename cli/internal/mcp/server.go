@@ -34,6 +34,7 @@ type Server struct {
 	connectCtx    context.Context
 	connectCancel context.CancelFunc
 	connectWG     sync.WaitGroup
+	connectMu     sync.Mutex
 	agentInfo     *store.AgentInfo
 	blocked       bool
 	version       string
@@ -320,19 +321,24 @@ func (s *Server) getAgentInfo() (*store.AgentInfo, error) {
 
 // startConnect starts the WebSocket connection to receive messages
 func (s *Server) startConnect(ctx context.Context) {
-	s.mu.Lock()
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
+	s.startConnectLocked(ctx)
+}
+
+func (s *Server) startConnectLocked(ctx context.Context) {
 	if s.connectCtx != nil {
-		s.mu.Unlock()
 		return
 	}
+	s.mu.Lock()
 	baseCtx := s.runCtx
+	s.mu.Unlock()
 	if baseCtx == nil {
 		baseCtx = ctx
 	}
 	connectCtx, cancel := context.WithCancel(baseCtx)
 	s.connectCtx = connectCtx
 	s.connectCancel = cancel
-	s.mu.Unlock()
 
 	s.connectWG.Add(1)
 	go func() {
@@ -343,22 +349,28 @@ func (s *Server) startConnect(ctx context.Context) {
 
 // stopConnect stops the WebSocket connection
 func (s *Server) stopConnect() {
-	s.mu.Lock()
-	cancel := s.connectCancel
-	s.connectCtx = nil
-	s.connectCancel = nil
-	s.mu.Unlock()
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
+	s.stopConnectLocked()
+}
 
+func (s *Server) stopConnectLocked() {
+	cancel := s.connectCancel
 	if cancel != nil {
 		cancel()
 		s.connectWG.Wait()
 	}
+	s.connectCtx = nil
+	s.connectCancel = nil
 }
 
 // resetConnect stops and restarts the WebSocket connection
 func (s *Server) resetConnect(ctx context.Context) {
-	s.stopConnect()
-	s.startConnect(ctx)
+	s.connectMu.Lock()
+	defer s.connectMu.Unlock()
+
+	s.stopConnectLocked()
+	s.startConnectLocked(ctx)
 }
 
 // runConnect runs the WebSocket connection loop
