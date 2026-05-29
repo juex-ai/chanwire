@@ -15,7 +15,7 @@
                                 +---------------------+
 ```
 
-The CLI speaks HTTP + WebSocket protocol to the server. The `mcp` subcommand runs an MCP server that exposes tools; `mcp --channel` also streams messages via claude/channel notifications.
+The CLI speaks HTTP + WebSocket protocol to the server. The `mcp` subcommand runs an MCP server that exposes tools; it streams messages via claude/channel notifications after the MCP client declares the experimental `claude/channel` capability.
 
 ## Server
 
