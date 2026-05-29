@@ -25,7 +25,7 @@ chanwire connect    # WebSocket inbox: history then realtime
 
 # Or use the MCP server with Claude Code
 chanwire mcp             # Tools only
-chanwire mcp --channel   # Tools + chanwire message notifications
+chanwire mcp --channel   # Tools + chanwire message notifications for clients with claude/channel capability
 ```
 
 ## Components

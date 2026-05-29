@@ -20,6 +20,8 @@ import (
 	"github.com/juex-ai/chanwire/cli/internal/store"
 )
 
+const channelCapabilityName = "claude/channel"
+
 // Server holds the state for our MCP server
 type Server struct {
 	mcpServer    *mcp.Server
@@ -36,6 +38,7 @@ type Server struct {
 	blocked       bool
 	version       string
 	channel       bool
+	channelReady  bool
 }
 
 // NewServer creates a new MCP server
@@ -71,11 +74,8 @@ Incoming messages from other agents arrive as <channel source="chanwire" event_t
 
 ## Important
 - If you see a "not registered" channel event, call chanwire_register_agent before sending messages.
-- Messages stream automatically only when the MCP server was started with --channel.`,
-		Capabilities: &mcp.ServerCapabilities{
-			Tools:        &mcp.ToolCapabilities{ListChanged: true},
-			Experimental: map[string]any{"claude/channel": map[string]any{}},
-		},
+- Messages stream automatically only when the MCP server was started with --channel and the client declares experimental claude/channel support.`,
+		Capabilities:       s.serverCapabilities(),
 		InitializedHandler: s.onInitialized,
 		Logger:             slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
 	})
@@ -144,10 +144,17 @@ func (s *Server) handleStatus(ctx context.Context) (*mcp.CallToolResult, any, er
 func (s *Server) onInitialized(ctx context.Context, req *mcp.InitializedRequest) {
 	s.log("client initialized")
 	s.setSession(req.Session)
-	if s.channel {
-		s.log("channel enabled — starting connect")
-		s.startConnect(ctx)
+	s.setChannelReady(false)
+	if !s.channel {
+		return
 	}
+	if !supportsChannel(req.Session) {
+		s.log("channel enabled but client did not declare %s capability - not starting connect", channelCapabilityName)
+		return
+	}
+	s.setChannelReady(true)
+	s.log("channel enabled and client supports %s - starting connect", channelCapabilityName)
+	s.startConnect(ctx)
 }
 
 // setSession stores the server session when connected
@@ -197,7 +204,7 @@ func (s *Server) handleRegisterAgent(ctx context.Context, agentName string) (*mc
 	s.blocked = false
 	s.mu.Unlock()
 
-	if s.channel {
+	if s.canNotifyChannel() {
 		s.resetConnect(ctx)
 	}
 
@@ -428,6 +435,9 @@ func (s *Server) handleFrame(frame *client.Frame) {
 
 // sendChannelNotification sends a notification to the client
 func (s *Server) sendChannelNotification(content string, eventType string) {
+	if !s.canNotifyChannel() {
+		return
+	}
 	if s.getSession() == nil || s.transport == nil {
 		return
 	}
@@ -444,6 +454,42 @@ func (s *Server) sendChannelNotification(content string, eventType string) {
 	if err := s.transport.Notify(ctx, "notifications/claude/channel", params); err != nil {
 		s.log("failed to send channel notification: %v", err)
 	}
+}
+
+func (s *Server) serverCapabilities() *mcp.ServerCapabilities {
+	capabilities := &mcp.ServerCapabilities{
+		Tools: &mcp.ToolCapabilities{ListChanged: true},
+	}
+	if s.channel {
+		capabilities.Experimental = map[string]any{
+			channelCapabilityName: map[string]any{},
+		}
+	}
+	return capabilities
+}
+
+func (s *Server) setChannelReady(ready bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.channelReady = ready
+}
+
+func (s *Server) canNotifyChannel() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.channel && s.channelReady
+}
+
+func supportsChannel(session *mcp.ServerSession) bool {
+	if session == nil {
+		return false
+	}
+	params := session.InitializeParams()
+	if params == nil || params.Capabilities == nil {
+		return false
+	}
+	_, ok := params.Capabilities.Experimental[channelCapabilityName]
+	return ok
 }
 
 // log writes a log message to stderr

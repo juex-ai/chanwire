@@ -40,14 +40,16 @@ func TestMCPFlow(t *testing.T) {
 		"method":  "initialize",
 		"params": map[string]any{
 			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]any{},
+			"capabilities":    channelClientCapabilities(),
 			"clientInfo": map[string]any{
 				"name":    "chanwire-e2e",
 				"version": "test",
 			},
 		},
 	})
-	assertNoRPCError(t, mcp.waitResponse(1))
+	initResp := mcp.waitResponse(1)
+	assertNoRPCError(t, initResp)
+	assertServerChannelCapability(t, initResp, true)
 
 	mcp.send(map[string]any{
 		"jsonrpc": "2.0",
@@ -133,14 +135,16 @@ func TestMCPFlow(t *testing.T) {
 		"method":  "initialize",
 		"params": map[string]any{
 			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]any{},
+			"capabilities":    channelClientCapabilities(),
 			"clientInfo": map[string]any{
 				"name":    "chanwire-e2e",
 				"version": "test",
 			},
 		},
 	})
-	assertNoRPCError(t, mcp2.waitResponse(8))
+	initResp2 := mcp2.waitResponse(8)
+	assertNoRPCError(t, initResp2)
+	assertServerChannelCapability(t, initResp2, true)
 
 	mcp2.send(map[string]any{
 		"jsonrpc": "2.0",
@@ -168,14 +172,16 @@ func TestMCPWithoutChannelDoesNotStream(t *testing.T) {
 		"method":  "initialize",
 		"params": map[string]any{
 			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]any{},
+			"capabilities":    channelClientCapabilities(),
 			"clientInfo": map[string]any{
 				"name":    "chanwire-e2e",
 				"version": "test",
 			},
 		},
 	})
-	assertNoRPCError(t, mcp.waitResponse(1))
+	initResp := mcp.waitResponse(1)
+	assertNoRPCError(t, initResp)
+	assertServerChannelCapability(t, initResp, false)
 
 	mcp.send(map[string]any{
 		"jsonrpc": "2.0",
@@ -198,6 +204,52 @@ func TestMCPWithoutChannelDoesNotStream(t *testing.T) {
 		"chanwire_send_msg",
 		"chanwire_status",
 	})
+}
+
+func TestMCPChannelRequiresClientCapability(t *testing.T) {
+	endpoint := e2e.Endpoint()
+	bin := e2e.Binary(t)
+	suffix := e2e.UniqueSuffix()
+
+	observer := "mcp-observer-" + suffix
+	bob := "mcp-bob-nocap-" + suffix
+	message := "mcp no capability should not notify " + suffix
+
+	observerToken := e2e.RegisterAgent(t, endpoint, observer)
+
+	mcp := startMCPServer(t, bin, endpoint, t.TempDir(), true)
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    map[string]any{},
+			"clientInfo": map[string]any{
+				"name":    "chanwire-e2e",
+				"version": "test",
+			},
+		},
+	})
+	initResp := mcp.waitResponse(1)
+	assertNoRPCError(t, initResp)
+	assertServerChannelCapability(t, initResp, true)
+
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+		"params":  map[string]any{},
+	})
+	mcp.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
+
+	callTool(t, mcp, 2, "chanwire_register_agent", map[string]any{"agent_name": bob})
+	registerResp := mcp.waitResponse(2)
+	assertNoRPCError(t, registerResp)
+	assertToolTextContains(t, registerResp, "registered: agent_name="+bob)
+	assertAgentInactive(t, endpoint, observerToken, bob)
+
+	e2e.SendMessage(t, endpoint, observerToken, bob, message, http.StatusOK)
+	mcp.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
 }
 
 func callTool(t *testing.T, c *stdioMCP, id int, name string, args map[string]any) {
@@ -226,6 +278,28 @@ func waitForAgentActive(t *testing.T, endpoint, token, agentName string) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for agent %q to become active", agentName)
+}
+
+func assertAgentInactive(t *testing.T, endpoint, token, agentName string) {
+	t.Helper()
+
+	deadline := time.Now().Add(750 * time.Millisecond)
+	seen := false
+	for time.Now().Before(deadline) {
+		for _, agent := range e2e.ListAgents(t, endpoint, token) {
+			if agent.AgentName != agentName {
+				continue
+			}
+			seen = true
+			if agent.LastActiveAt != nil {
+				t.Fatalf("agent %q became active without client channel capability", agentName)
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !seen {
+		t.Fatalf("agent %q was not registered", agentName)
+	}
 }
 
 type rpcMessage map[string]any
@@ -427,6 +501,29 @@ func assertNoRPCError(t *testing.T, msg rpcMessage) {
 	t.Helper()
 	if errVal, ok := msg["error"]; ok {
 		t.Fatalf("unexpected JSON-RPC error: %v", errVal)
+	}
+}
+
+func channelClientCapabilities() map[string]any {
+	return map[string]any{
+		"experimental": map[string]any{
+			"claude/channel": map[string]any{},
+		},
+	}
+}
+
+func assertServerChannelCapability(t *testing.T, msg rpcMessage, want bool) {
+	t.Helper()
+
+	result := resultMap(t, msg)
+	capabilities, ok := result["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("initialize result missing capabilities: %v", result)
+	}
+	experimental, _ := capabilities["experimental"].(map[string]any)
+	_, got := experimental["claude/channel"]
+	if got != want {
+		t.Fatalf("server claude/channel capability = %v, want %v; capabilities=%v", got, want, capabilities)
 	}
 }
 
