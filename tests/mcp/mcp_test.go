@@ -33,7 +33,7 @@ func TestMCPFlow(t *testing.T) {
 	defer aliceConn.Close()
 
 	mcpDataDir := t.TempDir()
-	mcp := startMCPServer(t, bin, endpoint, mcpDataDir, true)
+	mcp := startMCPServer(t, bin, endpoint, mcpDataDir)
 	mcp.send(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -128,7 +128,7 @@ func TestMCPFlow(t *testing.T) {
 	mcp.stop()
 	e2e.SendMessage(t, endpoint, aliceToken, bob, bobHistoryContent, http.StatusOK)
 
-	mcp2 := startMCPServer(t, bin, endpoint, mcpDataDir, true)
+	mcp2 := startMCPServer(t, bin, endpoint, mcpDataDir)
 	mcp2.send(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      8,
@@ -161,52 +161,7 @@ func TestMCPFlow(t *testing.T) {
 	mcp2.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
 }
 
-func TestMCPWithoutChannelDoesNotStream(t *testing.T) {
-	endpoint := e2e.Endpoint()
-	bin := e2e.Binary(t)
-
-	mcp := startMCPServer(t, bin, endpoint, t.TempDir(), false)
-	mcp.send(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2024-11-05",
-			"capabilities":    channelClientCapabilities(),
-			"clientInfo": map[string]any{
-				"name":    "chanwire-e2e",
-				"version": "test",
-			},
-		},
-	})
-	initResp := mcp.waitResponse(1)
-	assertNoRPCError(t, initResp)
-	assertServerChannelCapability(t, initResp, false)
-
-	mcp.send(map[string]any{
-		"jsonrpc": "2.0",
-		"method":  "notifications/initialized",
-		"params":  map[string]any{},
-	})
-	mcp.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
-
-	mcp.send(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      2,
-		"method":  "tools/list",
-		"params":  map[string]any{},
-	})
-	toolsResp := mcp.waitResponse(2)
-	assertNoRPCError(t, toolsResp)
-	assertToolNames(t, toolsResp, []string{
-		"chanwire_register_agent",
-		"chanwire_list_agents",
-		"chanwire_send_msg",
-		"chanwire_status",
-	})
-}
-
-func TestMCPChannelRequiresClientCapability(t *testing.T) {
+func TestMCPWithoutClientCapabilityDoesNotStream(t *testing.T) {
 	endpoint := e2e.Endpoint()
 	bin := e2e.Binary(t)
 	suffix := e2e.UniqueSuffix()
@@ -217,7 +172,7 @@ func TestMCPChannelRequiresClientCapability(t *testing.T) {
 
 	observerToken := e2e.RegisterAgent(t, endpoint, observer)
 
-	mcp := startMCPServer(t, bin, endpoint, t.TempDir(), true)
+	mcp := startMCPServer(t, bin, endpoint, t.TempDir())
 	mcp.send(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -314,14 +269,11 @@ type stdioMCP struct {
 	backlog []rpcMessage
 }
 
-func startMCPServer(t *testing.T, bin, endpoint, dataDir string, channel bool) *stdioMCP {
+func startMCPServer(t *testing.T, bin, endpoint, dataDir string) *stdioMCP {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	args := []string{"mcp"}
-	if channel {
-		args = append(args, "--channel")
-	}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = e2e.Env(endpoint, dataDir)
 

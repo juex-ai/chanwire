@@ -37,13 +37,12 @@ type Server struct {
 	agentInfo     *store.AgentInfo
 	blocked       bool
 	version       string
-	channel       bool
 	channelReady  bool
 }
 
 // NewServer creates a new MCP server
-func NewServer(version string, channel bool) *Server {
-	return &Server{version: version, channel: channel}
+func NewServer(version string) *Server {
+	return &Server{version: version}
 }
 
 // Run starts the MCP server and runs until context is cancelled
@@ -74,7 +73,7 @@ Incoming messages from other agents arrive as <channel source="chanwire" event_t
 
 ## Important
 - If you see a "not registered" channel event, call chanwire_register_agent before sending messages.
-- Messages stream automatically only when the MCP server was started with --channel and the client declares experimental claude/channel support.`,
+- Messages stream automatically only when the client declares experimental claude/channel support.`,
 		Capabilities:       s.serverCapabilities(),
 		InitializedHandler: s.onInitialized,
 		Logger:             slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
@@ -145,15 +144,12 @@ func (s *Server) onInitialized(ctx context.Context, req *mcp.InitializedRequest)
 	s.log("client initialized")
 	s.setSession(req.Session)
 	s.setChannelReady(false)
-	if !s.channel {
-		return
-	}
 	if !supportsChannel(req.Session) {
-		s.log("channel enabled but client did not declare %s capability - not starting connect", channelCapabilityName)
+		s.log("client did not declare %s capability - not starting connect", channelCapabilityName)
 		return
 	}
 	s.setChannelReady(true)
-	s.log("channel enabled and client supports %s - starting connect", channelCapabilityName)
+	s.log("client supports %s - starting connect", channelCapabilityName)
 	s.startConnect(ctx)
 }
 
@@ -457,15 +453,12 @@ func (s *Server) sendChannelNotification(content string, eventType string) {
 }
 
 func (s *Server) serverCapabilities() *mcp.ServerCapabilities {
-	capabilities := &mcp.ServerCapabilities{
+	return &mcp.ServerCapabilities{
 		Tools: &mcp.ToolCapabilities{ListChanged: true},
-	}
-	if s.channel {
-		capabilities.Experimental = map[string]any{
+		Experimental: map[string]any{
 			channelCapabilityName: map[string]any{},
-		}
+		},
 	}
-	return capabilities
 }
 
 func (s *Server) setChannelReady(ready bool) {
@@ -477,7 +470,7 @@ func (s *Server) setChannelReady(ready bool) {
 func (s *Server) canNotifyChannel() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.channel && s.channelReady
+	return s.channelReady
 }
 
 func supportsChannel(session *mcp.ServerSession) bool {

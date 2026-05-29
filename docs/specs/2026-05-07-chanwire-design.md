@@ -138,23 +138,20 @@ agent parsing: `version`, `status`, `agent register`, `agent list`, and
 
 ## MCP server contract
 
-- `chanwire mcp` runs an MCP server over stdio using the official Go SDK. By
-  default it exposes tools only; `chanwire mcp --channel` also streams
-  chanwire message notifications for clients that opt in to the Claude channel
-  extension.
+- `chanwire mcp` runs an MCP server over stdio using the official Go SDK. It
+  exposes tools and advertises experimental `claude/channel` support.
 - It exposes exactly four tools:
   - `chanwire_register_agent` with `agent_name`.
   - `chanwire_list_agents` with no inputs.
   - `chanwire_send_msg` with `to_agent` and `content`.
   - `chanwire_status` with no inputs.
-- With `--channel`, the server advertises experimental `claude/channel`
-  support. It only starts the WebSocket connection after the MCP client sends
+- It only starts the WebSocket connection after the MCP client sends
   `notifications/initialized` and its initialize request included
   `capabilities.experimental["claude/channel"]`.
-- If `--channel` is enabled but the client does not declare that capability,
-  tools still work, but chanwire does not open `/api/v1/ws` and does not send
+- If the client does not declare that capability, tools still work, but
+  chanwire does not open `/api/v1/ws` and does not send
   `notifications/claude/channel`.
-- With `--channel` and client opt-in, each WebSocket output line is forwarded as
+- With client opt-in, each WebSocket output line is forwarded as
   `notifications/claude/channel` with `params.content` and
   `params.meta.event_type`. Missing credentials emit one
   `event_type=not_registered` notification and block reconnecting until
