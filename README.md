@@ -65,3 +65,6 @@ The server reads a local `.env` if present.
 ```bash
 ./tests/run.sh all   # builds binaries, starts isolated local server, runs API + CLI + MCP E2E
 ```
+
+GitHub Actions runs `golangci-lint` for the `server`, `cli`, and `tests` Go
+modules, then runs server/CLI unit tests and the full E2E suite on Linux.

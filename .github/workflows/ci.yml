@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+          cache-dependency-path: |
+            server/go.sum
+            cli/go.sum
+            tests/go.sum
+
+      - name: Lint server
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: server
+          args: --config ../.golangci.yml
+
+      - name: Lint cli
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: cli
+          args: --config ../.golangci.yml
+
+      - name: Lint tests
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          working-directory: tests
+          args: --config ../.golangci.yml
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+          cache-dependency-path: |
+            server/go.sum
+            cli/go.sum
+            tests/go.sum
+
+      - name: Server unit tests
+        run: go test ./... -race -count=1
+        working-directory: server
+
+      - name: CLI unit tests
+        run: go test ./... -race -count=1
+        working-directory: cli
+
+      - name: E2E tests
+        run: ./tests/run.sh all
