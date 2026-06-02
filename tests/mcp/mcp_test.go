@@ -62,6 +62,25 @@ func TestMCPFlow(t *testing.T) {
 		return strings.Contains(content, "agent not registered")
 	})
 	assertChannelEvent(t, notRegistered, "not_registered", "agent not registered")
+	mcp.assertNoNotification("notifications/claude/channel", 1200*time.Millisecond)
+	assertStderrContainsCount(t, mcp, "[chanwire] connect: not registered.", 1)
+	assertStderrNotContains(t, mcp, "connect blocked")
+
+	callTool(t, mcp, 20, "chanwire_list_agents", map[string]any{})
+	unregisteredListResp := mcp.waitResponse(20)
+	assertNoRPCError(t, unregisteredListResp)
+	assertToolErrorTextContains(t, unregisteredListResp, "not registered")
+	assertStderrContainsCountEventually(t, mcp, "[chanwire] tool chanwire_list_agents: not registered.", 1, time.Second)
+
+	callTool(t, mcp, 21, "chanwire_send_msg", map[string]any{
+		"to_agent": alice,
+		"content":  "should fail before registration",
+	})
+	unregisteredSendResp := mcp.waitResponse(21)
+	assertNoRPCError(t, unregisteredSendResp)
+	assertToolErrorTextContains(t, unregisteredSendResp, "not registered")
+	assertStderrContainsCountEventually(t, mcp, "[chanwire] tool chanwire_send_msg: not registered.", 1, time.Second)
+	mcp.assertNoNotification("notifications/claude/channel", 300*time.Millisecond)
 
 	mcp.send(map[string]any{
 		"jsonrpc": "2.0",
@@ -205,6 +224,55 @@ func TestMCPWithoutClientCapabilityDoesNotStream(t *testing.T) {
 
 	e2e.SendMessage(t, endpoint, observerToken, bob, message, http.StatusOK)
 	mcp.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
+}
+
+func TestMCPRecoversAfterExternalRegistration(t *testing.T) {
+	endpoint := e2e.Endpoint()
+	bin := e2e.Binary(t)
+	suffix := e2e.UniqueSuffix()
+
+	observer := "mcp-observer-recover-" + suffix
+	bob := "mcp-bob-recover-" + suffix
+	observerToken := e2e.RegisterAgent(t, endpoint, observer)
+
+	mcpDataDir := t.TempDir()
+	mcp := startMCPServer(t, bin, endpoint, mcpDataDir)
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    channelClientCapabilities(),
+			"clientInfo": map[string]any{
+				"name":    "chanwire-e2e",
+				"version": "test",
+			},
+		},
+	})
+	initResp := mcp.waitResponse(1)
+	assertNoRPCError(t, initResp)
+
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+		"params":  map[string]any{},
+	})
+	notRegistered := mcp.waitNotification("notifications/claude/channel", func(params map[string]any) bool {
+		content, _ := params["content"].(string)
+		return strings.Contains(content, "agent not registered")
+	})
+	assertChannelEvent(t, notRegistered, "not_registered", "agent not registered")
+
+	out := e2e.RunCLI(t, bin, endpoint, mcpDataDir, "agent", "register", "--agent_name", bob)
+	e2e.AssertContains(t, out, "registered: agent_name="+bob)
+
+	callTool(t, mcp, 2, "chanwire_list_agents", map[string]any{})
+	listResp := mcp.waitResponse(2)
+	assertNoRPCError(t, listResp)
+	assertToolTextContains(t, listResp, observer)
+	assertToolTextContains(t, listResp, bob)
+	waitForAgentActive(t, endpoint, observerToken, bob)
 }
 
 func callTool(t *testing.T, c *stdioMCP, id int, name string, args map[string]any) {
@@ -512,6 +580,46 @@ func assertToolTextContains(t *testing.T, msg rpcMessage, want string) {
 	text := toolText(t, msg)
 	if !strings.Contains(text, want) {
 		t.Fatalf("tool text missing %q:\n%s", want, text)
+	}
+}
+
+func assertToolErrorTextContains(t *testing.T, msg rpcMessage, want string) {
+	t.Helper()
+	result := resultMap(t, msg)
+	if isError, _ := result["isError"].(bool); !isError {
+		t.Fatalf("tool result isError = %v, want true; result=%v", result["isError"], result)
+	}
+	assertToolTextContains(t, msg, want)
+}
+
+func assertStderrContainsCount(t *testing.T, c *stdioMCP, needle string, want int) {
+	t.Helper()
+	stderr := c.stderr.String()
+	if got := strings.Count(stderr, needle); got != want {
+		t.Fatalf("stderr count for %q = %d, want %d\nstderr:\n%s", needle, got, want, stderr)
+	}
+}
+
+func assertStderrContainsCountEventually(t *testing.T, c *stdioMCP, needle string, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		stderr := c.stderr.String()
+		if got := strings.Count(stderr, needle); got == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("stderr count for %q did not become %d within %s\nstderr:\n%s", needle, want, timeout, stderr)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func assertStderrNotContains(t *testing.T, c *stdioMCP, needle string) {
+	t.Helper()
+	stderr := c.stderr.String()
+	if strings.Contains(stderr, needle) {
+		t.Fatalf("stderr unexpectedly contains %q\nstderr:\n%s", needle, stderr)
 	}
 }
 
