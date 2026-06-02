@@ -214,14 +214,9 @@ func (s *Server) handleRegisterAgent(ctx context.Context, agentName string) (*mc
 
 // handleListAgents handles the chanwire_list_agents tool
 func (s *Server) handleListAgents(ctx context.Context) (*mcp.CallToolResult, any, error) {
-	info, err := s.getAgentInfo()
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("error: %v", err)},
-			},
-			IsError: true,
-		}, nil, nil
+	info, errResult := s.agentInfoForTool("chanwire_list_agents")
+	if errResult != nil {
+		return errResult, nil, nil
 	}
 
 	hc := client.NewHTTP(config.Endpoint(), info.Token)
@@ -261,14 +256,9 @@ func (s *Server) handleListAgents(ctx context.Context) (*mcp.CallToolResult, any
 
 // handleSendMsg handles the chanwire_send_msg tool
 func (s *Server) handleSendMsg(ctx context.Context, toAgent, content string) (*mcp.CallToolResult, any, error) {
-	info, err := s.getAgentInfo()
-	if err != nil {
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: fmt.Sprintf("error: %v", err)},
-			},
-			IsError: true,
-		}, nil, nil
+	info, errResult := s.agentInfoForTool("chanwire_send_msg")
+	if errResult != nil {
+		return errResult, nil, nil
 	}
 
 	hc := client.NewHTTP(config.Endpoint(), info.Token)
@@ -317,6 +307,15 @@ func (s *Server) getAgentInfo() (*store.AgentInfo, error) {
 	s.agentInfo = info
 	s.mu.Unlock()
 	return info, nil
+}
+
+func (s *Server) agentInfoForTool(toolName string) (*store.AgentInfo, *mcp.CallToolResult) {
+	info, err := s.getAgentInfo()
+	if err == nil {
+		return info, nil
+	}
+	s.log("tool %s: %v", toolName, err)
+	return nil, toolErrorResult(err)
 }
 
 // startConnect starts the WebSocket connection to receive messages
@@ -387,7 +386,6 @@ func (s *Server) runConnect(ctx context.Context) {
 		s.mu.Unlock()
 
 		if blocked {
-			s.log("connect blocked — agent not registered")
 			select {
 			case <-ctx.Done():
 				return
@@ -422,8 +420,12 @@ func (s *Server) runConnectOnce(ctx context.Context) {
 // setBlocked sets the blocked state and sends a notification
 func (s *Server) setBlocked() {
 	s.mu.Lock()
+	wasBlocked := s.blocked
 	s.blocked = true
 	s.mu.Unlock()
+	if wasBlocked {
+		return
+	}
 
 	s.sendChannelNotification(
 		"chanwire: agent not registered. Use the chanwire_register_agent tool to register, then messages will stream automatically.",
@@ -495,6 +497,15 @@ func supportsChannel(session *mcp.ServerSession) bool {
 	}
 	_, ok := params.Capabilities.Experimental[channelCapabilityName]
 	return ok
+}
+
+func toolErrorResult(err error) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: fmt.Sprintf("error: %v", err)},
+		},
+		IsError: true,
+	}
 }
 
 // log writes a log message to stderr
