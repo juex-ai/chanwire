@@ -214,7 +214,7 @@ func (s *Server) handleRegisterAgent(ctx context.Context, agentName string) (*mc
 
 // handleListAgents handles the chanwire_list_agents tool
 func (s *Server) handleListAgents(ctx context.Context) (*mcp.CallToolResult, any, error) {
-	info, errResult := s.agentInfoForTool("chanwire_list_agents")
+	info, errResult := s.agentInfoForTool(ctx, "chanwire_list_agents")
 	if errResult != nil {
 		return errResult, nil, nil
 	}
@@ -256,7 +256,7 @@ func (s *Server) handleListAgents(ctx context.Context) (*mcp.CallToolResult, any
 
 // handleSendMsg handles the chanwire_send_msg tool
 func (s *Server) handleSendMsg(ctx context.Context, toAgent, content string) (*mcp.CallToolResult, any, error) {
-	info, errResult := s.agentInfoForTool("chanwire_send_msg")
+	info, errResult := s.agentInfoForTool(ctx, "chanwire_send_msg")
 	if errResult != nil {
 		return errResult, nil, nil
 	}
@@ -309,10 +309,12 @@ func (s *Server) getAgentInfo() (*store.AgentInfo, error) {
 	return info, nil
 }
 
-func (s *Server) agentInfoForTool(toolName string) (*store.AgentInfo, *mcp.CallToolResult) {
+func (s *Server) agentInfoForTool(ctx context.Context, toolName string) (*store.AgentInfo, *mcp.CallToolResult) {
 	info, err := s.getAgentInfo()
 	if err == nil {
-		s.setUnblocked()
+		if s.setUnblocked() && s.canNotifyChannel() {
+			s.resetConnect(ctx)
+		}
 		return info, nil
 	}
 	s.log("tool %s: %v", toolName, err)
@@ -387,12 +389,7 @@ func (s *Server) runConnect(ctx context.Context) {
 		s.mu.Unlock()
 
 		if blocked {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
-			continue
+			return
 		}
 
 		s.runConnectOnce(ctx)
@@ -434,10 +431,12 @@ func (s *Server) setBlocked() {
 	)
 }
 
-func (s *Server) setUnblocked() {
+func (s *Server) setUnblocked() bool {
 	s.mu.Lock()
+	wasBlocked := s.blocked
 	s.blocked = false
 	s.mu.Unlock()
+	return wasBlocked
 }
 
 // handleFrame forwards decoded WebSocket frames to the MCP client.
