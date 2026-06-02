@@ -226,6 +226,55 @@ func TestMCPWithoutClientCapabilityDoesNotStream(t *testing.T) {
 	mcp.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
 }
 
+func TestMCPRecoversAfterExternalRegistration(t *testing.T) {
+	endpoint := e2e.Endpoint()
+	bin := e2e.Binary(t)
+	suffix := e2e.UniqueSuffix()
+
+	observer := "mcp-observer-recover-" + suffix
+	bob := "mcp-bob-recover-" + suffix
+	observerToken := e2e.RegisterAgent(t, endpoint, observer)
+
+	mcpDataDir := t.TempDir()
+	mcp := startMCPServer(t, bin, endpoint, mcpDataDir)
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    channelClientCapabilities(),
+			"clientInfo": map[string]any{
+				"name":    "chanwire-e2e",
+				"version": "test",
+			},
+		},
+	})
+	initResp := mcp.waitResponse(1)
+	assertNoRPCError(t, initResp)
+
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+		"params":  map[string]any{},
+	})
+	notRegistered := mcp.waitNotification("notifications/claude/channel", func(params map[string]any) bool {
+		content, _ := params["content"].(string)
+		return strings.Contains(content, "agent not registered")
+	})
+	assertChannelEvent(t, notRegistered, "not_registered", "agent not registered")
+
+	out := e2e.RunCLI(t, bin, endpoint, mcpDataDir, "agent", "register", "--agent_name", bob)
+	e2e.AssertContains(t, out, "registered: agent_name="+bob)
+
+	callTool(t, mcp, 2, "chanwire_list_agents", map[string]any{})
+	listResp := mcp.waitResponse(2)
+	assertNoRPCError(t, listResp)
+	assertToolTextContains(t, listResp, observer)
+	assertToolTextContains(t, listResp, bob)
+	waitForAgentActive(t, endpoint, observerToken, bob)
+}
+
 func callTool(t *testing.T, c *stdioMCP, id int, name string, args map[string]any) {
 	t.Helper()
 	c.send(map[string]any{

@@ -312,6 +312,7 @@ func (s *Server) getAgentInfo() (*store.AgentInfo, error) {
 func (s *Server) agentInfoForTool(toolName string) (*store.AgentInfo, *mcp.CallToolResult) {
 	info, err := s.getAgentInfo()
 	if err == nil {
+		s.setUnblocked()
 		return info, nil
 	}
 	s.log("tool %s: %v", toolName, err)
@@ -431,6 +432,12 @@ func (s *Server) setBlocked() {
 		"chanwire: agent not registered. Use the chanwire_register_agent tool to register, then messages will stream automatically.",
 		"not_registered",
 	)
+}
+
+func (s *Server) setUnblocked() {
+	s.mu.Lock()
+	s.blocked = false
+	s.mu.Unlock()
 }
 
 // handleFrame forwards decoded WebSocket frames to the MCP client.
