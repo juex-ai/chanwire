@@ -120,9 +120,9 @@ function openComposer(name,p){
   stage.appendChild(c);
   placeComposer(c,p);
 }
-async function loadState(opts={}){const stick=opts.scrollToBottom||isNearMessagesBottom(),currentMessages=state.messages;const r=await fetch('/api/v1/web/state');state=await r.json();if(opts.preserveMessages&&currentMessages.length)state.messages=currentMessages;hasOlderMessages=state.messages.length>=messagePageSize;render({...opts,scrollToBottom:stick})}
+async function loadState(opts={}){const stick=opts.scrollToBottom||isNearMessagesBottom();const r=await fetch('/api/v1/web/state');const data=await r.json();if(opts.preserveMessages&&state.messages.length)data.messages=state.messages;state=data;hasOlderMessages=state.messages.length>=messagePageSize;render({...opts,scrollToBottom:stick})}
 stage.addEventListener('click',ev=>{if(!document.querySelector('.composer')?.contains(ev.target))closeComposer()});
-function appendRealtimeMessage(message){const stick=isNearMessagesBottom();state.messages=stick?[...state.messages,message].slice(-80):[...state.messages,message];hasOlderMessages=hasOlderMessages||state.messages.length>=messagePageSize;renderMessages({scrollToBottom:stick})}
+function appendRealtimeMessage(message){const stick=isNearMessagesBottom();state.messages=stick?[...state.messages,message].slice(-80):[...state.messages,message];renderMessages({scrollToBottom:stick})}
 function connect(){const ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/v1/web/ws`);ws.onopen=()=>{$('status').style.background='var(--green)'};ws.onclose=()=>{$('status').style.background='var(--pumpkin)';setTimeout(connect,1200)};ws.onmessage=ev=>{const f=JSON.parse(ev.data);if(f.type==='message'&&f.message)appendRealtimeMessage(f.message);else if(f.type==='presence')loadState({preserveMessages:true})}}
 function toast(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',1800)}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}

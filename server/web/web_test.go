@@ -165,6 +165,9 @@ func TestMessageListScrollToLatestContract(t *testing.T) {
 		"function setupMessageScrollControls",
 		"renderMessages({scrollToBottom:stick})",
 		"renderMessages({preserveTop:true})",
+		"const data=await r.json()",
+		"if(opts.preserveMessages&&state.messages.length)data.messages=state.messages",
+		"state=data",
 		"loadState({scrollToBottom:true})",
 		"$('messages').addEventListener('scroll',updateJumpToLatest",
 		"$('jump-latest').onclick=scrollMessagesToBottom",
@@ -176,6 +179,9 @@ func TestMessageListScrollToLatestContract(t *testing.T) {
 
 	if strings.Contains(script, "state.messages=[...state.messages,f.message].slice(-80);loadState()") {
 		t.Fatal("realtime messages should not immediately refetch state and lose scroll intent")
+	}
+	if strings.Contains(script, "hasOlderMessages=hasOlderMessages||") {
+		t.Fatal("realtime messages should not re-enable older pagination by growing the visible list")
 	}
 }
 
