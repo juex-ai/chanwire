@@ -20,7 +20,7 @@
 const colors=['#ace2df','#e69dff','#84bfff','#ef724f','#e7db4c','#6ed311'];
 const messagePageSize=20;
 const bottomStickThreshold=48;
-let state={agents:[],edges:[],messages:[]},selected=null,hasOlderMessages=false;
+let state={agents:[],edges:[],messages:[]},selected=null,hasOlderMessages=false,loadingOlderMessages=false;
 const $=id=>document.getElementById(id);
 const stage=document.querySelector('.stage');
 const expandedMessages=new Set();
@@ -61,10 +61,10 @@ function renderMessages(opts={}){
   if(opts.preserveTop){pane.scrollTop=prevTop+(pane.scrollHeight-prevHeight);updateJumpToLatest();return}
   if(stick)scrollMessagesToBottom();else updateJumpToLatest();
 }
-function renderOlderMessagesControl(){return state.messages.length&&hasOlderMessages?`<button class="load" id="load" type="button" aria-label="load older messages">&#8593;</button>`:''}
+function renderOlderMessagesControl(){return state.messages.length&&hasOlderMessages?`<button class="load" id="load" type="button" aria-label="load older messages" ${loadingOlderMessages?'disabled aria-busy="true"':''}>&#8593;</button>`:''}
 function renderMessageContent(m){return m.content_html||`<p>${esc(m.content).replace(/\n/g,'<br>')}</p>`}
 function setupOlderMessagesControl(){const load=$('load');if(load)load.onclick=loadOlderMessages}
-async function loadOlderMessages(){const first=state.messages[0]?.message_id;if(!first)return;const load=$('load');if(load){load.disabled=true;load.setAttribute('aria-busy','true')}try{const r=await fetch(`/api/v1/web/messages?before_id=${first}`);if(!r.ok)throw new Error('load failed');const data=await r.json();if(data.messages.length===0){hasOlderMessages=false;renderMessages({preserveTop:true});return}if(data.messages.length<messagePageSize)hasOlderMessages=false;state.messages=[...data.messages,...state.messages];renderMessages({preserveTop:true})}catch{toast('load failed');if(load){load.disabled=false;load.removeAttribute('aria-busy')}}}
+async function loadOlderMessages(){const first=state.messages[0]?.message_id;if(!first||loadingOlderMessages)return;loadingOlderMessages=true;const load=$('load');if(load){load.disabled=true;load.setAttribute('aria-busy','true')}try{const r=await fetch(`/api/v1/web/messages?before_id=${first}`);if(!r.ok)throw new Error('load failed');const data=await r.json();if(data.messages.length===0){hasOlderMessages=false;loadingOlderMessages=false;renderMessages({preserveTop:true});return}if(data.messages.length<messagePageSize)hasOlderMessages=false;state.messages=[...data.messages,...state.messages];loadingOlderMessages=false;renderMessages({preserveTop:true})}catch{toast('load failed');loadingOlderMessages=false;renderMessages({preserveTop:true})}}
 function setupMessageToggles(){
   document.querySelectorAll('.message').forEach(card=>{
     const content=card.querySelector('.content'),toggle=card.querySelector('.message-toggle');

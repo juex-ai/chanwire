@@ -155,8 +155,12 @@ func TestOlderMessagesLoadIconContract(t *testing.T) {
 	for _, token := range []string{
 		`aria-label="load older messages"`,
 		`>&#8593;</button>`,
+		"loadingOlderMessages",
+		"if(!first||loadingOlderMessages)return",
+		"loadingOlderMessages=true",
+		`loadingOlderMessages?'disabled aria-busy="true"':''`,
 		"load.setAttribute('aria-busy','true')",
-		"load.removeAttribute('aria-busy')",
+		"loadingOlderMessages=false;renderMessages({preserveTop:true})",
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("web console script should include %q", token)
