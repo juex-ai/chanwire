@@ -57,6 +57,10 @@ func testServer(t *testing.T) (baseURL string, cleanup func()) {
 	api.GET("/agent/list", authMW, handlers.AgentList(s))
 	api.POST("/msg/send", authMW, handlers.MsgSend(s, h))
 	api.GET("/ws", authMW, handlers.WSConnect(s, h))
+	api.GET("/web/state", handlers.WebState(s, h))
+	api.GET("/web/messages", handlers.WebMessages(s))
+	api.POST("/web/msg/send", handlers.WebMsgSend(s, h))
+	api.GET("/web/ws", handlers.WebWS(h))
 
 	go srv.Spin()
 
@@ -488,5 +492,114 @@ func TestOfflineThenOnline(t *testing.T) {
 	f := readFrame(t, conn)
 	if f.Type != "history_batch" || len(f.Messages) != 1 || f.Messages[0].Content != "offline-msg" {
 		t.Fatalf("offline→online: want history_batch/offline-msg, got %+v", f)
+	}
+}
+
+func TestWebSystemSendAndMessagePagination(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	bobToken := register(t, baseURL, "bob")
+	conn := dialWS(t, baseURL, bobToken)
+	defer conn.Close()
+
+	resp := doPost(t, baseURL+"/api/v1/web/msg/send", "", proto.WebSendRequest{
+		ToAgent: "bob",
+		Content: "hello from dashboard",
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("web system send: want 200, got %d", resp.StatusCode)
+	}
+	var send proto.SendResponse
+	decodeBody(t, resp, &send)
+	if send.MessageID == 0 {
+		t.Fatal("web system send returned empty message id")
+	}
+
+	frame := readFrame(t, conn)
+	if frame.Type != "realtime" || frame.FromAgent != "system" || frame.Content != "hello from dashboard" {
+		t.Fatalf("unexpected realtime frame: %+v", frame)
+	}
+
+	resp = doGet(t, baseURL+"/api/v1/web/messages", "")
+	if resp.StatusCode != 200 {
+		t.Fatalf("web messages: want 200, got %d", resp.StatusCode)
+	}
+	var messages proto.WebMessagesResponse
+	decodeBody(t, resp, &messages)
+	if len(messages.Messages) != 1 {
+		t.Fatalf("web messages: want 1, got %d", len(messages.Messages))
+	}
+	got := messages.Messages[0]
+	if got.FromAgent != "system" || got.ToAgent != "bob" || got.Content != "hello from dashboard" {
+		t.Fatalf("unexpected web message: %+v", got)
+	}
+}
+
+func TestWebWSOriginCheck(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	wsURL := "ws" + baseURL[4:] + "/api/v1/web/ws"
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{
+		"Origin": {"http://evil.example"},
+	})
+	if err == nil {
+		conn.Close()
+		t.Fatal("cross-origin web websocket unexpectedly connected")
+	}
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		if resp == nil {
+			t.Fatal("cross-origin web websocket: missing response")
+		}
+		t.Fatalf("cross-origin web websocket: want 403, got %d", resp.StatusCode)
+	}
+
+	conn, resp, err = websocket.DefaultDialer.Dial(wsURL, http.Header{
+		"Origin": {baseURL},
+	})
+	if err != nil {
+		if resp != nil {
+			t.Fatalf("same-origin web websocket: %v (status %d)", err, resp.StatusCode)
+		}
+		t.Fatalf("same-origin web websocket: %v", err)
+	}
+	conn.Close()
+}
+
+func TestWebStateShowsOnlineAgentsAndRecentEdges(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	aliceToken := register(t, baseURL, "alice")
+	bobToken := register(t, baseURL, "bob")
+	aliceConn := dialWS(t, baseURL, aliceToken)
+	defer aliceConn.Close()
+	bobConn := dialWS(t, baseURL, bobToken)
+	defer bobConn.Close()
+
+	resp := doPost(t, baseURL+"/api/v1/msg/send", aliceToken, proto.SendRequest{ToAgent: "bob", Content: "edge"})
+	if resp.StatusCode != 200 {
+		t.Fatalf("send edge: want 200, got %d", resp.StatusCode)
+	}
+	_ = readFrame(t, bobConn)
+
+	resp = doGet(t, baseURL+"/api/v1/web/state", "")
+	if resp.StatusCode != 200 {
+		t.Fatalf("web state: want 200, got %d", resp.StatusCode)
+	}
+	var state proto.WebStateResponse
+	decodeBody(t, resp, &state)
+	if len(state.Agents) != 2 {
+		t.Fatalf("web state agents: want 2, got %d (%+v)", len(state.Agents), state.Agents)
+	}
+	found := false
+	for _, edge := range state.Edges {
+		if edge.FromAgent == "alice" && edge.ToAgent == "bob" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("web state missing alice -> bob edge: %+v", state.Edges)
 	}
 }

@@ -58,3 +58,49 @@ type Frame struct {
 	SentAt    *int64           `json:"sent_at,omitempty"`
 	Messages  []HistoryMessage `json:"messages,omitempty"`
 }
+
+// WebMessage is a message shape for the public web console.
+type WebMessage struct {
+	MessageID int64  `json:"message_id"`
+	FromAgent string `json:"from_agent"`
+	ToAgent   string `json:"to_agent"`
+	Content   string `json:"content"`
+	SentAt    int64  `json:"sent_at"`
+}
+
+// WebAgent is an online agent node in the public web console.
+type WebAgent struct {
+	AgentName    string `json:"agent_name"`
+	AvatarSeed   string `json:"avatar_seed"`
+	LastActiveAt *int64 `json:"last_active_at"`
+}
+
+// WebEdge is a directed recent-message relationship between online agents.
+type WebEdge struct {
+	FromAgent string `json:"from_agent"`
+	ToAgent   string `json:"to_agent"`
+}
+
+// WebStateResponse is the initial/refresh data for the web console.
+type WebStateResponse struct {
+	Agents   []WebAgent   `json:"agents"`
+	Edges    []WebEdge    `json:"edges"`
+	Messages []WebMessage `json:"messages"`
+}
+
+// WebMessagesResponse is a paginated message-list response.
+type WebMessagesResponse struct {
+	Messages []WebMessage `json:"messages"`
+}
+
+// WebSendRequest is the body for POST /api/v1/web/msg/send.
+type WebSendRequest struct {
+	ToAgent string `json:"to_agent"`
+	Content string `json:"content"`
+}
+
+// WebFrame is sent to unauthenticated web-console WebSocket subscribers.
+type WebFrame struct {
+	Type    string      `json:"type"`
+	Message *WebMessage `json:"message,omitempty"`
+}

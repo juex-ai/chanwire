@@ -63,6 +63,17 @@ func MsgSend(s *store.Store, h *hub.Hub) app.HandlerFunc {
 			SentAt:    &sat,
 		})
 
+		h.BroadcastWeb(proto.WebFrame{
+			Type: "message",
+			Message: &proto.WebMessage{
+				MessageID: msg.ID,
+				FromAgent: msg.FromAgent,
+				ToAgent:   msg.ToAgent,
+				Content:   msg.Content,
+				SentAt:    msg.CreatedAt,
+			},
+		})
+
 		ctx.JSON(consts.StatusOK, proto.SendResponse{
 			MessageID: msg.ID,
 			SentAt:    msg.CreatedAt,

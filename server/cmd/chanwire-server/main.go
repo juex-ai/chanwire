@@ -15,6 +15,7 @@ import (
 	"github.com/juex-ai/chanwire/server/internal/handlers"
 	"github.com/juex-ai/chanwire/server/internal/hub"
 	"github.com/juex-ai/chanwire/server/internal/store"
+	"github.com/juex-ai/chanwire/server/web"
 )
 
 // Build-time metadata injected via -ldflags.
@@ -43,6 +44,9 @@ func main() {
 		version, commit, addr, cfg.DB)
 
 	// Routes.
+	srv.GET("/", web.Index())
+	srv.GET("/web", web.Index())
+
 	api := srv.Group("/api/v1")
 
 	// No auth.
@@ -53,6 +57,12 @@ func main() {
 	api.GET("/agent/list", authMW, handlers.AgentList(s))
 	api.POST("/msg/send", authMW, handlers.MsgSend(s, h))
 	api.GET("/ws", authMW, handlers.WSConnect(s, h))
+
+	// Public web console API.
+	api.GET("/web/state", handlers.WebState(s, h))
+	api.GET("/web/messages", handlers.WebMessages(s))
+	api.POST("/web/msg/send", handlers.WebMsgSend(s, h))
+	api.GET("/web/ws", handlers.WebWS(h))
 
 	// Graceful shutdown on SIGINT/SIGTERM, bounded by a 10s deadline so a
 	// stuck connection or slow DB cannot hang the process forever.

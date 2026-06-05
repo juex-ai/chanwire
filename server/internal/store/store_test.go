@@ -99,3 +99,28 @@ func TestRegisterIdempotent(t *testing.T) {
 		t.Fatalf("idempotent register: ids differ (%d vs %d)", a1.ID, a2.ID)
 	}
 }
+
+func TestSystemMessageDoesNotRequireRegisteredSender(t *testing.T) {
+	s := fileBackedStore(t)
+	ctx := context.Background()
+
+	bob, err := s.RegisterAgent(ctx, "bob")
+	if err != nil {
+		t.Fatalf("register bob: %v", err)
+	}
+	msg, err := s.InsertSystemMessage(ctx, bob.ID, "from web")
+	if err != nil {
+		t.Fatalf("insert system message: %v", err)
+	}
+	if msg.FromAgent != "system" || msg.ToAgent != "bob" {
+		t.Fatalf("unexpected endpoints: %+v", msg)
+	}
+
+	messages, err := s.ListMessages(ctx, 20, 0)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].FromAgent != "system" || messages[0].ToAgent != "bob" {
+		t.Fatalf("unexpected listed messages: %+v", messages)
+	}
+}

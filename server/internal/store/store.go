@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
@@ -95,7 +96,9 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// migrate creates tables and indexes if they don't already exist.
+// migrate creates tables and indexes if they don't already exist, then upgrades
+// older message schemas so web-originated "system" messages can be persisted
+// without requiring a registered system agent.
 func (s *Store) migrate() error {
 	ddl := `
 CREATE TABLE IF NOT EXISTS agents (
@@ -107,17 +110,101 @@ CREATE TABLE IF NOT EXISTS agents (
 );
 
 CREATE TABLE IF NOT EXISTS messages (
-    id            INTEGER PRIMARY KEY,
-    from_agent_id INTEGER NOT NULL REFERENCES agents(id),
-    to_agent_id   INTEGER NOT NULL REFERENCES agents(id),
-    content       TEXT    NOT NULL,
-    created_at    INTEGER NOT NULL
+    id              INTEGER PRIMARY KEY,
+    from_agent_id   INTEGER REFERENCES agents(id),
+    from_agent_name TEXT    NOT NULL,
+    to_agent_id     INTEGER NOT NULL REFERENCES agents(id),
+    content         TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent_id, id);
 `
-	_, err := s.db.ExecContext(context.Background(), ddl)
+	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
+		return err
+	}
+	if err := s.ensureSystemMessageSchema(context.Background()); err != nil {
+		return err
+	}
+	indexes := `
+CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent_id, id);
+CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at, id);
+`
+	_, err := s.db.ExecContext(context.Background(), indexes)
 	return err
+}
+
+func (s *Store) ensureSystemMessageSchema(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(messages)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasFromName := false
+	fromIDNotNull := false
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "from_agent_name" {
+			hasFromName = true
+		}
+		if name == "from_agent_id" {
+			fromIDNotNull = notnull == 1
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasFromName && !fromIDNotNull {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	fromNameExpr := "COALESCE(a.name, 'system')"
+	if hasFromName {
+		fromNameExpr = "COALESCE(NULLIF(m.from_agent_name, ''), a.name, 'system')"
+	}
+	copyMessages := fmt.Sprintf(`INSERT INTO messages (id, from_agent_id, from_agent_name, to_agent_id, content, created_at)
+SELECT m.id,
+       m.from_agent_id,
+       %s AS from_agent_name,
+       m.to_agent_id,
+       m.content,
+       m.created_at
+  FROM messages_old m
+  LEFT JOIN agents a ON a.id = m.from_agent_id`, fromNameExpr)
+
+	stmts := []string{
+		`DROP INDEX IF EXISTS idx_messages_to`,
+		`DROP INDEX IF EXISTS idx_messages_created`,
+		`ALTER TABLE messages RENAME TO messages_old`,
+		`CREATE TABLE messages (
+    id              INTEGER PRIMARY KEY,
+    from_agent_id   INTEGER REFERENCES agents(id),
+    from_agent_name TEXT    NOT NULL,
+    to_agent_id     INTEGER NOT NULL REFERENCES agents(id),
+    content         TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL
+)`,
+		copyMessages,
+		`DROP TABLE messages_old`,
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // nowMillis returns the current time as unix milliseconds.
@@ -244,24 +331,44 @@ func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 	return agents, rows.Err()
 }
 
-// Message is a row from the messages table (with from_agent name resolved).
+// Message is a row from the messages table (with endpoint agent names resolved).
 type Message struct {
 	ID          int64
-	FromAgentID int64
-	FromAgent   string // joined from agents
+	FromAgentID *int64
+	FromAgent   string
 	ToAgentID   int64
+	ToAgent     string
 	Content     string
 	CreatedAt   int64
 }
 
-// InsertMessage persists a new message and returns it. The caller passes the
-// already-known sender name (resolved by the auth middleware) so this is a
-// single-query write — no extra SELECT for the sender name on the hot path.
+// InsertMessage persists a new agent-authenticated message and returns it. The
+// caller passes the already-known sender name (resolved by auth middleware) so
+// this is a single-query write — no extra SELECT for the sender name on the hot path.
 func (s *Store) InsertMessage(ctx context.Context, fromAgentID int64, fromAgentName string, toAgentID int64, content string) (*Message, error) {
+	if strings.TrimSpace(fromAgentName) == "" {
+		return nil, fmt.Errorf("from agent name is required")
+	}
+	return s.insertMessage(ctx, &fromAgentID, fromAgentName, toAgentID, content)
+}
+
+// InsertSystemMessage persists a web-originated message from the special system sender.
+func (s *Store) InsertSystemMessage(ctx context.Context, toAgentID int64, content string) (*Message, error) {
+	return s.insertMessage(ctx, nil, "system", toAgentID, content)
+}
+
+func (s *Store) insertMessage(ctx context.Context, fromAgentID *int64, fromAgentName string, toAgentID int64, content string) (*Message, error) {
 	now := nowMillis()
+	var fromAgentValue any
+	var storedFromAgentID *int64
+	if fromAgentID != nil {
+		id := *fromAgentID
+		fromAgentValue = id
+		storedFromAgentID = &id
+	}
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO messages (from_agent_id, to_agent_id, content, created_at) VALUES (?, ?, ?, ?)`,
-		fromAgentID, toAgentID, content, now,
+		`INSERT INTO messages (from_agent_id, from_agent_name, to_agent_id, content, created_at) VALUES (?, ?, ?, ?, ?)`,
+		fromAgentValue, fromAgentName, toAgentID, content, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert message: %w", err)
@@ -271,14 +378,28 @@ func (s *Store) InsertMessage(ctx context.Context, fromAgentID int64, fromAgentN
 		return nil, fmt.Errorf("last insert id: %w", err)
 	}
 
+	toAgent, err := s.GetAgentNameByID(ctx, toAgentID)
+	if err != nil {
+		return nil, fmt.Errorf("lookup recipient: %w", err)
+	}
 	return &Message{
 		ID:          id,
-		FromAgentID: fromAgentID,
+		FromAgentID: storedFromAgentID,
 		FromAgent:   fromAgentName,
 		ToAgentID:   toAgentID,
+		ToAgent:     toAgent,
 		Content:     content,
 		CreatedAt:   now,
 	}, nil
+}
+
+// GetAgentNameByID returns an agent name for an id.
+func (s *Store) GetAgentNameByID(ctx context.Context, id int64) (string, error) {
+	var name string
+	if err := s.db.QueryRowContext(ctx, `SELECT name FROM agents WHERE id = ?`, id).Scan(&name); err != nil {
+		return "", err
+	}
+	return name, nil
 }
 
 // GetMessagesForAgent returns all messages addressed to toAgentID ordered by id ASC.
@@ -289,19 +410,19 @@ func (s *Store) GetMessagesForAgent(ctx context.Context, toAgentID int64) ([]Mes
 // GetRecentMessagesForAgent returns the latest limit messages for toAgentID in
 // chronological order. A non-positive limit returns all messages.
 func (s *Store) GetRecentMessagesForAgent(ctx context.Context, toAgentID int64, limit int) ([]Message, error) {
-	query := `SELECT m.id, m.from_agent_id, a.name AS from_agent, m.to_agent_id, m.content, m.created_at
+	query := `SELECT m.id, m.from_agent_id, m.from_agent_name, m.to_agent_id, ta.name AS to_agent, m.content, m.created_at
 		   FROM messages m
-		   JOIN agents a ON a.id = m.from_agent_id
+		   JOIN agents ta ON ta.id = m.to_agent_id
 		  WHERE m.to_agent_id = ?
 		  ORDER BY m.id ASC`
 	args := []any{toAgentID}
 
 	if limit > 0 {
-		query = `SELECT id, from_agent_id, from_agent, to_agent_id, content, created_at
+		query = `SELECT id, from_agent_id, from_agent_name, to_agent_id, to_agent, content, created_at
 		   FROM (
-		         SELECT m.id, m.from_agent_id, a.name AS from_agent, m.to_agent_id, m.content, m.created_at
+		         SELECT m.id, m.from_agent_id, m.from_agent_name, m.to_agent_id, ta.name AS to_agent, m.content, m.created_at
 		           FROM messages m
-		           JOIN agents a ON a.id = m.from_agent_id
+		           JOIN agents ta ON ta.id = m.to_agent_id
 		          WHERE m.to_agent_id = ?
 		          ORDER BY m.id DESC
 		          LIMIT ?
@@ -309,7 +430,67 @@ func (s *Store) GetRecentMessagesForAgent(ctx context.Context, toAgentID int64, 
 		  ORDER BY id ASC`
 		args = append(args, limit)
 	}
+	return s.scanMessages(ctx, query, args...)
+}
 
+// ListMessages returns recent messages across the system in chronological order.
+// If beforeID is positive, only older messages with id < beforeID are returned.
+func (s *Store) ListMessages(ctx context.Context, limit int, beforeID int64) ([]Message, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	where := ""
+	args := []any{}
+	if beforeID > 0 {
+		where = "WHERE m.id < ?"
+		args = append(args, beforeID)
+	}
+	args = append(args, limit)
+	query := fmt.Sprintf(`SELECT id, from_agent_id, from_agent_name, to_agent_id, to_agent, content, created_at
+		   FROM (
+		         SELECT m.id, m.from_agent_id, m.from_agent_name, m.to_agent_id, ta.name AS to_agent, m.content, m.created_at
+		           FROM messages m
+		           JOIN agents ta ON ta.id = m.to_agent_id
+		          %s
+		          ORDER BY m.id DESC
+		          LIMIT ?
+		        )
+		  ORDER BY id ASC`, where)
+	return s.scanMessages(ctx, query, args...)
+}
+
+// ListMessageEdgesSince returns directed sender/recipient relationships for
+// messages created at or after sinceMillis. System-originated messages are not
+// agent-to-agent edges and are intentionally omitted.
+func (s *Store) ListMessageEdgesSince(ctx context.Context, sinceMillis int64) ([]MessageEdge, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT m.from_agent_id, m.to_agent_id
+  FROM messages m
+ WHERE m.from_agent_id IS NOT NULL
+   AND m.created_at >= ?`, sinceMillis)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var edges []MessageEdge
+	for rows.Next() {
+		var edge MessageEdge
+		if err := rows.Scan(&edge.FromAgentID, &edge.ToAgentID); err != nil {
+			return nil, err
+		}
+		edges = append(edges, edge)
+	}
+	return edges, rows.Err()
+}
+
+// MessageEdge is a directed relationship between two registered agents.
+type MessageEdge struct {
+	FromAgentID int64
+	ToAgentID   int64
+}
+
+func (s *Store) scanMessages(ctx context.Context, query string, args ...any) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -319,7 +500,7 @@ func (s *Store) GetRecentMessagesForAgent(ctx context.Context, toAgentID int64, 
 	var msgs []Message
 	for rows.Next() {
 		m := Message{}
-		if err := rows.Scan(&m.ID, &m.FromAgentID, &m.FromAgent, &m.ToAgentID, &m.Content, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.FromAgentID, &m.FromAgent, &m.ToAgentID, &m.ToAgent, &m.Content, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, m)
