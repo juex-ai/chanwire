@@ -131,6 +131,60 @@ func TestMessageListLayoutAndOlderPaginationContract(t *testing.T) {
 	}
 }
 
+func TestMessageListScrollToLatestContract(t *testing.T) {
+	html := readIndexHTML(t)
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	for _, token := range []string{
+		`id="jump-latest"`,
+		`aria-label="scroll to latest"`,
+		`hidden>&#8595;</button>`,
+	} {
+		if !strings.Contains(html, token) {
+			t.Fatalf("web console should include jump-to-latest control token %q", token)
+		}
+	}
+
+	if !ruleDeclares(style, ".feed", "position:relative") {
+		t.Fatal("message feed should anchor the floating jump-to-latest control")
+	}
+	if !ruleDeclares(style, ".jump-latest", "position:absolute") {
+		t.Fatal("jump-to-latest control should float over the message feed")
+	}
+	if !ruleDeclares(style, ".jump-latest[hidden]", "display:none") {
+		t.Fatal("jump-to-latest control should be hidden while already near the latest message")
+	}
+
+	for _, token := range []string{
+		"const bottomStickThreshold=48",
+		"function isNearMessagesBottom",
+		"function scrollMessagesToBottom",
+		"function updateJumpToLatest",
+		"function appendRealtimeMessage",
+		"function setupMessageScrollControls",
+		"renderMessages({scrollToBottom:stick})",
+		"renderMessages({preserveTop:true})",
+		"const data=await r.json()",
+		"if(opts.preserveMessages&&state.messages.length)data.messages=state.messages",
+		"state=data",
+		"loadState({scrollToBottom:true})",
+		"$('messages').addEventListener('scroll',updateJumpToLatest",
+		"$('jump-latest').onclick=scrollMessagesToBottom",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
+	}
+
+	if strings.Contains(script, "state.messages=[...state.messages,f.message].slice(-80);loadState()") {
+		t.Fatal("realtime messages should not immediately refetch state and lose scroll intent")
+	}
+	if strings.Contains(script, "hasOlderMessages=hasOlderMessages||") {
+		t.Fatal("realtime messages should not re-enable older pagination by growing the visible list")
+	}
+}
+
 func readIndexHTML(t *testing.T) string {
 	t.Helper()
 

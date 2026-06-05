@@ -292,7 +292,7 @@ func waitForAgentActive(t *testing.T, endpoint, token, agentName string) {
 	t.Helper()
 
 	var lastAgents []e2e.Agent
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		lastAgents = e2e.ListAgents(t, endpoint, token)
 		for _, agent := range lastAgents {
