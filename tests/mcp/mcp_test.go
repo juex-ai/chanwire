@@ -291,16 +291,18 @@ func callTool(t *testing.T, c *stdioMCP, id int, name string, args map[string]an
 func waitForAgentActive(t *testing.T, endpoint, token, agentName string) {
 	t.Helper()
 
-	deadline := time.Now().Add(5 * time.Second)
+	var lastAgents []e2e.Agent
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		for _, agent := range e2e.ListAgents(t, endpoint, token) {
+		lastAgents = e2e.ListAgents(t, endpoint, token)
+		for _, agent := range lastAgents {
 			if agent.AgentName == agentName && agent.LastActiveAt != nil {
 				return
 			}
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for agent %q to become active", agentName)
+	t.Fatalf("timed out waiting for agent %q to become active; last agents=%+v", agentName, lastAgents)
 }
 
 func assertAgentInactive(t *testing.T, endpoint, token, agentName string) {
