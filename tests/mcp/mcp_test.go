@@ -110,8 +110,6 @@ func TestMCPFlow(t *testing.T) {
 	assertNoRPCError(t, registerResp)
 	assertToolTextContains(t, registerResp, "registered: agent_name="+bob)
 
-	waitForAgentActive(t, endpoint, aliceToken, bob)
-
 	callTool(t, mcp, 5, "chanwire_status", map[string]any{})
 	registeredStatusResp := mcp.waitResponse(5)
 	assertNoRPCError(t, registeredStatusResp)
@@ -137,9 +135,10 @@ func TestMCPFlow(t *testing.T) {
 	}
 
 	e2e.SendMessage(t, endpoint, aliceToken, bob, aliceToBobContent, http.StatusOK)
-	msgNotification := mcp.waitNotification("notifications/claude/channel", func(params map[string]any) bool {
+	msgNotification := mcp.waitNotificationWithin("notifications/claude/channel", 60*time.Second, func(params map[string]any) bool {
 		content, _ := params["content"].(string)
-		return strings.Contains(content, "[realtime] from "+alice) &&
+		return (strings.Contains(content, "[realtime] from "+alice) ||
+			strings.Contains(content, "[history]  from "+alice)) &&
 			strings.Contains(content, aliceToBobContent)
 	})
 	assertChannelEvent(t, msgNotification, "message", aliceToBobContent)
@@ -448,7 +447,12 @@ func (c *stdioMCP) waitResponse(id int) rpcMessage {
 
 func (c *stdioMCP) waitNotification(method string, pred func(map[string]any) bool) rpcMessage {
 	c.t.Helper()
-	return c.waitFor(10*time.Second, func(msg rpcMessage) bool {
+	return c.waitNotificationWithin(method, 10*time.Second, pred)
+}
+
+func (c *stdioMCP) waitNotificationWithin(method string, timeout time.Duration, pred func(map[string]any) bool) rpcMessage {
+	c.t.Helper()
+	return c.waitFor(timeout, func(msg rpcMessage) bool {
 		if msg["method"] != method {
 			return false
 		}

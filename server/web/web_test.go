@@ -131,6 +131,47 @@ func TestMessageListLayoutAndOlderPaginationContract(t *testing.T) {
 	}
 }
 
+func TestOlderMessagesLoadIconContract(t *testing.T) {
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	for _, selectorAndDeclaration := range []struct {
+		selector    string
+		declaration string
+	}{
+		{".load", "align-self:center"},
+		{".load", "width:44px"},
+		{".load", "height:44px"},
+		{".load", "flex:0 0 44px"},
+		{".load", "display:grid"},
+		{".load", "place-items:center"},
+		{".load:disabled", "cursor:wait"},
+	} {
+		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
+			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
+		}
+	}
+
+	for _, token := range []string{
+		`aria-label="load older messages"`,
+		`>&#8593;</button>`,
+		"loadingOlderMessages",
+		"if(!first||loadingOlderMessages)return",
+		"loadingOlderMessages=true",
+		`loadingOlderMessages?'disabled aria-busy="true"':''`,
+		"load.setAttribute('aria-busy','true')",
+		"loadingOlderMessages=false;renderMessages({preserveTop:true})",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
+	}
+
+	if strings.Contains(script, "load older msgs") {
+		t.Fatal("load older control should render as an icon, not text")
+	}
+}
+
 func TestMessageListScrollToLatestContract(t *testing.T) {
 	html := readIndexHTML(t)
 	style := readIndexStyle(t)
