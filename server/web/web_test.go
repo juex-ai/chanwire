@@ -93,14 +93,58 @@ func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 	}
 }
 
-func readIndexStyle(t *testing.T) string {
+func TestMessageListLayoutAndOlderPaginationContract(t *testing.T) {
+	html := readIndexHTML(t)
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	if !ruleDeclares(style, ".app", "grid-template-columns:minmax(360px,1fr) minmax(390px,585px)") {
+		t.Fatal("desktop layout should make the message feed roughly 1.5x wider without forcing fixed overflow")
+	}
+	if !ruleDeclares(style, ".stage", "min-width:0") {
+		t.Fatal("stage should be allowed to shrink beside the wider message feed")
+	}
+	if strings.Contains(html, "feed-sub") || strings.Contains(html, "system-wide live feed") {
+		t.Fatal("messages header should not render the old subtitle")
+	}
+	if strings.Contains(html, `<button class="load" id="load">`) {
+		t.Fatal("load older control should be rendered inside the scrollable message list, not fixed below the header")
+	}
+
+	for _, token := range []string{
+		"renderOlderMessagesControl()",
+		"setupOlderMessagesControl",
+		"function loadOlderMessages",
+		"const messagePageSize=20",
+		"before_id=${first}",
+		"load.disabled=true",
+		"catch{",
+		"toast('load failed')",
+		"state.messages=[...data.messages,...state.messages]",
+		"data.messages.length===0",
+		"data.messages.length<messagePageSize",
+		"state.messages.length>=messagePageSize",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
+	}
+}
+
+func readIndexHTML(t *testing.T) string {
 	t.Helper()
 
 	data, err := fs.ReadFile(assets, "dist/index.html")
 	if err != nil {
 		t.Fatalf("read embedded index: %v", err)
 	}
-	html := string(data)
+	return string(data)
+}
+
+func readIndexStyle(t *testing.T) string {
+	t.Helper()
+
+	html := readIndexHTML(t)
 	start := strings.Index(html, "<style>")
 	end := strings.Index(html, "</style>")
 	if start < 0 || end < 0 || end <= start {
@@ -112,11 +156,7 @@ func readIndexStyle(t *testing.T) string {
 func readIndexScript(t *testing.T) string {
 	t.Helper()
 
-	data, err := fs.ReadFile(assets, "dist/index.html")
-	if err != nil {
-		t.Fatalf("read embedded index: %v", err)
-	}
-	html := string(data)
+	html := readIndexHTML(t)
 	start := strings.Index(html, "<script>")
 	end := strings.Index(html, "</script>")
 	if start < 0 || end < 0 || end <= start {
