@@ -61,11 +61,12 @@ type Frame struct {
 
 // WebMessage is a message shape for the public web console.
 type WebMessage struct {
-	MessageID int64  `json:"message_id"`
-	FromAgent string `json:"from_agent"`
-	ToAgent   string `json:"to_agent"`
-	Content   string `json:"content"`
-	SentAt    int64  `json:"sent_at"`
+	MessageID   int64  `json:"message_id"`
+	FromAgent   string `json:"from_agent"`
+	ToAgent     string `json:"to_agent"`
+	Content     string `json:"content"`
+	ContentHTML string `json:"content_html,omitempty"`
+	SentAt      int64  `json:"sent_at"`
 }
 
 // WebAgent is an online agent node in the public web console.
