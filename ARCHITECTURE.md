@@ -53,6 +53,10 @@ init or in a `_pragma=foreign_keys(1)` DSN parameter).
 | GET    | `/agent/list`     | yes  | `[{agent_name, last_active_at}]`                            |
 | POST   | `/msg/send`       | yes  | `{to_agent, content}` → `{message_id, sent_at}`             |
 | GET    | `/ws`             | yes  | upgrades to WebSocket                                       |
+| GET    | `/web/state`      | no   | online agent graph + latest 20 messages for the web console |
+| GET    | `/web/messages`   | no   | latest/older global messages, `before_id` pagination        |
+| POST   | `/web/msg/send`   | no   | `{to_agent, content}` → sends from special `system` sender  |
+| GET    | `/web/ws`         | no   | web-console realtime event WebSocket                        |
 
 Auth middleware: parses `Authorization: Bearer <token>`, resolves to `agent_id`, injects into request context, updates `last_active_at`.
 
@@ -96,6 +100,13 @@ All frames are JSON.
   "sent_at": 1778154123456
 }
 ```
+
+
+### Embedded web console
+
+The server serves a single-page web console at `/` and `/web`. Its unauthenticated web API is intentionally local-dashboard oriented: it can read the current online-agent graph, page through global messages 20 at a time, subscribe to global message/presence events, and send messages as the special `system` sender. `system` is persisted as a message sender name, not as a registered agent, so it never appears in `/agent/list` or as an online node.
+
+The online graph is derived from live agent WebSocket connections. Directed edges include agent-to-agent messages from the last seven days where both endpoints are currently online; reciprocal messages naturally render as bidirectional arrows in the browser.
 
 ## CLI
 

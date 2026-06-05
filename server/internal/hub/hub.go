@@ -32,7 +32,16 @@ func NewWSConn(c *websocket.Conn) *WSConn {
 // underlying connection — important to avoid racing the Hertz engine when it
 // recycles the hijacked connection after the WS handler returns.
 func (w *WSConn) WriteFrame(f proto.Frame) error {
-	b, err := json.Marshal(f)
+	return w.writeJSON(f)
+}
+
+// WriteWebFrame serialises a public web-console frame as JSON.
+func (w *WSConn) WriteWebFrame(f proto.WebFrame) error {
+	return w.writeJSON(f)
+}
+
+func (w *WSConn) writeJSON(v any) error {
+	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
@@ -55,10 +64,12 @@ func (w *WSConn) Close() {
 	w.mu.Unlock()
 }
 
-// Hub manages all live WebSocket connections, keyed by agent ID.
+// Hub manages all live WebSocket connections, keyed by agent ID, plus public
+// web-console observers that need a global realtime feed.
 type Hub struct {
-	mu    sync.RWMutex
-	conns map[int64][]*WSConn
+	mu       sync.RWMutex
+	conns    map[int64][]*WSConn
+	webConns []*WSConn
 }
 
 // New creates an empty Hub.
@@ -91,6 +102,41 @@ func (h *Hub) Unregister(agentID int64, conn *WSConn) {
 	}
 }
 
+// RegisterWeb adds a public web-console observer connection.
+func (h *Hub) RegisterWeb(conn *WSConn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.webConns = append(h.webConns, conn)
+}
+
+// UnregisterWeb removes a public web-console observer connection.
+func (h *Hub) UnregisterWeb(conn *WSConn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	updated := h.webConns[:0]
+	for _, c := range h.webConns {
+		if c != conn {
+			updated = append(updated, c)
+		}
+	}
+	for i := len(updated); i < len(h.webConns); i++ {
+		h.webConns[i] = nil
+	}
+	h.webConns = updated
+}
+
+// OnlineAgentIDs returns agent IDs that currently have one or more live client
+// WebSocket connections.
+func (h *Hub) OnlineAgentIDs() []int64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ids := make([]int64, 0, len(h.conns))
+	for id := range h.conns {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // Deliver sends frame to all live connections for agentID.
 // Connections that fail are silently skipped (they will clean up on disconnect).
 func (h *Hub) Deliver(agentID int64, frame proto.Frame) {
@@ -101,5 +147,17 @@ func (h *Hub) Deliver(agentID int64, frame proto.Frame) {
 
 	for _, c := range conns {
 		_ = c.WriteFrame(frame)
+	}
+}
+
+// BroadcastWeb sends frame to every connected web-console observer.
+func (h *Hub) BroadcastWeb(frame proto.WebFrame) {
+	h.mu.RLock()
+	conns := make([]*WSConn, len(h.webConns))
+	copy(conns, h.webConns)
+	h.mu.RUnlock()
+
+	for _, c := range conns {
+		_ = c.WriteWebFrame(frame)
 	}
 }

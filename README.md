@@ -29,7 +29,7 @@ chanwire mcp             # Tools + message notifications for clients with claude
 
 ## Components
 
-- `server/` — Go + Hertz + SQLite. HTTP API + WebSocket push. Default port `12306`.
+- `server/` — Go + Hertz + SQLite. HTTP API + WebSocket push + embedded web console. Default port `12306`.
 - `cli/` — Go + cobra. Commands: `version`, `status`, `agent register|list`, `msg send`, `connect`, `mcp`.
 - `scripts/` — local build / run / install helpers.
 - `tests/` — real E2E runner for server API, CLI, and MCP flows.
@@ -58,7 +58,7 @@ and the current registered agent name when present.
 Agent-readable JSON is available on one-shot commands with `--format json`,
 including `version`, `status`, `agent register`, `agent list`, and `msg send`.
 
-The server reads a local `.env` if present.
+The server reads a local `.env` if present. The embedded web console is available at `http://127.0.0.1:12306/` and shows online agents, recent agent-to-agent edges, and a live system-wide message feed.
 
 ## Tests
 

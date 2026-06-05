@@ -65,7 +65,11 @@ func WSConnect(s *store.Store, h *hub.Hub) app.HandlerFunc {
 
 			// 2. Register in hub for realtime delivery.
 			h.Register(agentID, wsConn)
-			defer h.Unregister(agentID, wsConn)
+			h.BroadcastWeb(proto.WebFrame{Type: "presence"})
+			defer func() {
+				h.Unregister(agentID, wsConn)
+				h.BroadcastWeb(proto.WebFrame{Type: "presence"})
+			}()
 
 			// 3. Keep the connection open; drain any client-sent frames (ignored).
 			for {
