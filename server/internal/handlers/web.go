@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	stdhtml "html"
 	"sort"
 	"strconv"
 	"time"
@@ -13,6 +15,9 @@ import (
 	"github.com/juex-ai/chanwire/server/internal/hub"
 	"github.com/juex-ai/chanwire/server/internal/proto"
 	"github.com/juex-ai/chanwire/server/internal/store"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	goldhtml "github.com/yuin/goldmark/renderer/html"
 )
 
 const (
@@ -21,6 +26,11 @@ const (
 )
 
 var webUpgrader = websocket.HertzUpgrader{}
+
+var webMarkdown = goldmark.New(
+	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithRendererOptions(goldhtml.WithHardWraps()),
+)
 
 // WebState handles GET /api/v1/web/state for the public dashboard.
 func WebState(s *store.Store, h *hub.Hub) app.HandlerFunc {
@@ -117,13 +127,7 @@ func WebMsgSend(s *store.Store, h *hub.Hub) app.HandlerFunc {
 			Content:   msg.Content,
 			SentAt:    &sat,
 		})
-		webMsg := proto.WebMessage{
-			MessageID: msg.ID,
-			FromAgent: msg.FromAgent,
-			ToAgent:   msg.ToAgent,
-			Content:   msg.Content,
-			SentAt:    msg.CreatedAt,
-		}
+		webMsg := webMessage(msg)
 		h.BroadcastWeb(proto.WebFrame{Type: "message", Message: &webMsg})
 		ctx.JSON(consts.StatusOK, proto.SendResponse{MessageID: msg.ID, SentAt: msg.CreatedAt})
 	}
@@ -194,14 +198,30 @@ func webEdges(ctx context.Context, s *store.Store, allAgents []store.Agent, agen
 
 func webMessages(messages []store.Message) []proto.WebMessage {
 	out := make([]proto.WebMessage, 0, len(messages))
-	for _, msg := range messages {
-		out = append(out, proto.WebMessage{
-			MessageID: msg.ID,
-			FromAgent: msg.FromAgent,
-			ToAgent:   msg.ToAgent,
-			Content:   msg.Content,
-			SentAt:    msg.CreatedAt,
-		})
+	for i := range messages {
+		out = append(out, webMessage(&messages[i]))
 	}
 	return out
+}
+
+func webMessage(msg *store.Message) proto.WebMessage {
+	if msg == nil {
+		return proto.WebMessage{}
+	}
+	return proto.WebMessage{
+		MessageID:   msg.ID,
+		FromAgent:   msg.FromAgent,
+		ToAgent:     msg.ToAgent,
+		Content:     msg.Content,
+		ContentHTML: renderMarkdownHTML(msg.Content),
+		SentAt:      msg.CreatedAt,
+	}
+}
+
+func renderMarkdownHTML(content string) string {
+	var buf bytes.Buffer
+	if err := webMarkdown.Convert([]byte(content), &buf); err != nil {
+		return stdhtml.EscapeString(content)
+	}
+	return buf.String()
 }

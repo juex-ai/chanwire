@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -533,6 +534,42 @@ func TestWebSystemSendAndMessagePagination(t *testing.T) {
 	got := messages.Messages[0]
 	if got.FromAgent != "system" || got.ToAgent != "bob" || got.Content != "hello from dashboard" {
 		t.Fatalf("unexpected web message: %+v", got)
+	}
+}
+
+func TestWebMessagesIncludeSafeMarkdownHTML(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	_ = register(t, baseURL, "bob")
+	content := "**bold**\n\n- item\n\n<script>alert(1)</script>"
+
+	resp := doPost(t, baseURL+"/api/v1/web/msg/send", "", proto.WebSendRequest{
+		ToAgent: "bob",
+		Content: content,
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("web system send: want 200, got %d", resp.StatusCode)
+	}
+
+	resp = doGet(t, baseURL+"/api/v1/web/messages", "")
+	if resp.StatusCode != 200 {
+		t.Fatalf("web messages: want 200, got %d", resp.StatusCode)
+	}
+	var messages proto.WebMessagesResponse
+	decodeBody(t, resp, &messages)
+	if len(messages.Messages) != 1 {
+		t.Fatalf("web messages: want 1, got %d", len(messages.Messages))
+	}
+	got := messages.Messages[0]
+	if got.Content != content {
+		t.Fatalf("web message should keep raw content, got %q", got.Content)
+	}
+	if !strings.Contains(got.ContentHTML, "<strong>bold</strong>") || !strings.Contains(got.ContentHTML, "<li>item</li>") {
+		t.Fatalf("web message should include rendered markdown HTML, got %q", got.ContentHTML)
+	}
+	if strings.Contains(strings.ToLower(got.ContentHTML), "<script") {
+		t.Fatalf("web message markdown HTML should not emit raw script tags, got %q", got.ContentHTML)
 	}
 }
 

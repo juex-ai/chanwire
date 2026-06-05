@@ -8,6 +8,7 @@ import (
 
 func TestWebConsoleWrapsLongGeneratedText(t *testing.T) {
 	style := readIndexStyle(t)
+	script := readIndexScript(t)
 
 	for _, selector := range []string{".message", ".route", ".content", ".composer h3", ".toast"} {
 		if !ruleDeclares(style, selector, "overflow-wrap:anywhere") {
@@ -21,8 +22,8 @@ func TestWebConsoleWrapsLongGeneratedText(t *testing.T) {
 		}
 	}
 
-	if !ruleDeclares(style, ".content", "white-space:pre-wrap") {
-		t.Error(".content should preserve intentional message line breaks")
+	if !strings.Contains(script, "replace(/\\n/g,'<br>')") {
+		t.Error("plain-text fallback content should preserve intentional message line breaks")
 	}
 }
 
@@ -54,6 +55,37 @@ func TestComposerBubbleInteractionContract(t *testing.T) {
 		"button.disabled=true",
 		"catch",
 		"to ${esc(name)}:",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
+	}
+}
+
+func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	if !ruleDeclares(style, ".route-agent", "background:var(--agent-color)") {
+		t.Fatal("message route agents should render as colored chips")
+	}
+	if !ruleDeclares(style, ".message.collapsed .content", "-webkit-line-clamp:5") {
+		t.Fatal("collapsed message content should clamp to five lines")
+	}
+
+	for _, token := range []string{
+		"content_html",
+		"expandedMessages",
+		"renderMessageContent",
+		"setupMessageToggles",
+		"message-toggle",
+		"data-message-id",
+		"isExpanded",
+		"visible.has(id)",
+		"card.dataset.messageId",
+		"aria-expanded",
+		"--agent-color:${color(m.from_agent)}",
+		"--agent-color:${color(m.to_agent)}",
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("web console script should include %q", token)
