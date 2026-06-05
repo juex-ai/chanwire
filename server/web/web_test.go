@@ -37,6 +37,30 @@ func TestRuleDeclaresFindsSelectorInsideMediaBlock(t *testing.T) {
 	}
 }
 
+func TestComposerBubbleInteractionContract(t *testing.T) {
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	if !ruleDeclares(style, ".composer button", "margin-left:auto") {
+		t.Fatal("composer send button should align to the right")
+	}
+
+	for _, token := range []string{
+		"function placeComposer",
+		"const placements",
+		"stage.addEventListener",
+		"contains(ev.target)",
+		"ev.stopPropagation",
+		"button.disabled=true",
+		"catch",
+		"to ${esc(name)}:",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
+	}
+}
+
 func readIndexStyle(t *testing.T) string {
 	t.Helper()
 
@@ -51,6 +75,22 @@ func readIndexStyle(t *testing.T) string {
 		t.Fatal("index.html should include an inline style block")
 	}
 	return html[start+len("<style>") : end]
+}
+
+func readIndexScript(t *testing.T) string {
+	t.Helper()
+
+	data, err := fs.ReadFile(assets, "dist/index.html")
+	if err != nil {
+		t.Fatalf("read embedded index: %v", err)
+	}
+	html := string(data)
+	start := strings.Index(html, "<script>")
+	end := strings.Index(html, "</script>")
+	if start < 0 || end < 0 || end <= start {
+		t.Fatal("index.html should include an inline script block")
+	}
+	return html[start+len("<script>") : end]
 }
 
 func ruleDeclares(style, selector, declaration string) bool {
