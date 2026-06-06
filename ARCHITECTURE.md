@@ -114,6 +114,7 @@ All frames are JSON.
 The server serves a single-page web console at `/` and `/web`. Its unauthenticated web API is intentionally local-dashboard oriented: it can read the current online-agent graph, page through global messages 20 at a time, subscribe to global message/presence events, and send messages as the special `system` sender. `system` is persisted as a message sender name, not as a registered agent, so it never appears in `/agent/list` or as an online node.
 
 The online graph is derived from live agent WebSocket connections. Directed edges include agent-to-agent messages from the last seven days where both endpoints are currently online; reciprocal messages naturally render as bidirectional arrows in the browser.
+The browser also applies realtime agent-to-agent web WS message frames to the visible graph immediately, adding the directed edge and transient arrow animation without waiting for a full `/web/state` refresh. Initial loads and refresh data render only the final graph state without animation.
 
 ## CLI
 

@@ -204,7 +204,7 @@ func TestMessageListScrollToLatestContract(t *testing.T) {
 		"function updateJumpToLatest",
 		"function appendRealtimeMessage",
 		"function setupMessageScrollControls",
-		"renderMessages({scrollToBottom:stick})",
+		"render({scrollToBottom:stick,pulseEdge:message})",
 		"renderMessages({preserveTop:true})",
 		"const data=await r.json()",
 		"if(opts.preserveMessages&&state.messages.length)data.messages=state.messages",
@@ -223,6 +223,117 @@ func TestMessageListScrollToLatestContract(t *testing.T) {
 	}
 	if strings.Contains(script, "hasOlderMessages=hasOlderMessages||") {
 		t.Fatal("realtime messages should not re-enable older pagination by growing the visible list")
+	}
+}
+
+func TestRealtimeMessagesRefreshGraphAndAnimateEdges(t *testing.T) {
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	if !ruleDeclares(style, ".edge-pulse", "animation:edgePulse .86s ease-out") {
+		t.Fatal("realtime graph edges should expose a transient pulse animation class")
+	}
+	if !strings.Contains(style, "@keyframes edgePulse") {
+		t.Fatal("edge pulse animation should be declared in CSS")
+	}
+
+	for _, token := range []string{
+		"function upsertRealtimeGraphMessage",
+		"state.agents.some(a=>a.agent_name===name)",
+		"state.edges.some(e=>e.from_agent===message.from_agent&&e.to_agent===message.to_agent)",
+		"render({scrollToBottom:stick,pulseEdge:message})",
+		"function drawEdges(pos,opts={})",
+		"lineClass=pulse?'edge-pulse':''",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
+	}
+
+	if strings.Contains(script, "renderMessages({scrollToBottom:stick})}") {
+		t.Fatal("realtime messages should redraw the graph, not only the message list")
+	}
+}
+
+func TestGraphBoardPanContract(t *testing.T) {
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	for _, selectorAndDeclaration := range []struct {
+		selector    string
+		declaration string
+	}{
+		{".stage", "cursor:grab"},
+		{".stage.dragging", "cursor:grabbing"},
+		{"#agents", "transform:translate(var(--pan-x),var(--pan-y))"},
+		{"#edges", "transform:translate(var(--pan-x),var(--pan-y))"},
+	} {
+		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
+			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
+		}
+	}
+
+	for _, token := range []string{
+		"const boardPan={x:0,y:0,dragging:false",
+		"function applyBoardPan",
+		"function setupBoardPan",
+		"stage.addEventListener('pointerdown'",
+		"addEventListener('pointermove'",
+		"addEventListener('pointerup'",
+		"closest('.agent,.composer,button,textarea')",
+		"stage.classList.add('dragging')",
+		"stage.style.setProperty('--pan-x'",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
+	}
+}
+
+func TestSmokeBackgroundCanvasContract(t *testing.T) {
+	html := readIndexHTML(t)
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	if !strings.Contains(html, `<canvas class="smoke" id="smoke"`) {
+		t.Fatal("graph board should include an animated smoke canvas layer")
+	}
+	for _, selectorAndDeclaration := range []struct {
+		selector    string
+		declaration string
+	}{
+		{".board", "background:#fbfbf8"},
+		{".smoke", "position:absolute"},
+		{".smoke", "filter:blur(16px) saturate(1.25)"},
+		{".smoke", "pointer-events:none"},
+	} {
+		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
+			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
+		}
+	}
+
+	for _, stale := range []string{
+		"radial-gradient(circle at 15% 20%",
+		"radial-gradient(circle at 88% 18%",
+		"radial-gradient(circle at 65% 84%",
+	} {
+		if strings.Contains(style, stale) {
+			t.Fatalf("graph board should remove stale static color-ball background %q", stale)
+		}
+	}
+
+	for _, token := range []string{
+		"const smokeBlobs=[",
+		"function setupSmokeCanvas",
+		"function animateSmoke",
+		"const mouseInfluence=",
+		"ctx.globalCompositeOperation='lighter'",
+		"requestAnimationFrame(animateSmoke)",
+		"stage.addEventListener('pointermove',ev=>",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
 	}
 }
 
