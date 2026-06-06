@@ -364,12 +364,17 @@ func TestWebConsoleMicrointeractionContract(t *testing.T) {
 		{".load:active", "transform:translate(1px,1px)"},
 		{".jump-latest:active", "transform:translate(1px,1px)"},
 		{".load:disabled:hover", "transform:none"},
+		{".load:disabled:hover", "box-shadow:2px 2px 0 var(--text)"},
+		{".composer button:disabled", "opacity:.65"},
+		{".composer button:disabled", "cursor:not-allowed"},
+		{".composer button:disabled:hover", "transform:none"},
+		{".composer button:disabled:hover", "box-shadow:2px 2px 0 var(--text)"},
 		{".route-agent", "transition:transform .14s ease,filter .14s ease"},
 		{".route-agent:hover", "transform:translateY(-1px)"},
 		{".message-toggle:hover", "transform:translateY(-1px)"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
-			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
+			t.Errorf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
 		}
 	}
 
@@ -380,10 +385,10 @@ func TestWebConsoleMicrointeractionContract(t *testing.T) {
 		".message-toggle:focus-visible",
 	} {
 		if !ruleDeclares(style, selector, "outline:3px solid var(--blue)") {
-			t.Fatalf("%s should show a visible keyboard focus ring", selector)
+			t.Errorf("%s should show a visible keyboard focus ring", selector)
 		}
 		if !ruleDeclares(style, selector, "outline-offset:3px") {
-			t.Fatalf("%s should offset the keyboard focus ring", selector)
+			t.Errorf("%s should offset the keyboard focus ring", selector)
 		}
 	}
 }
