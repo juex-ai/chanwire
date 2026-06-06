@@ -340,6 +340,54 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 	}
 }
 
+func TestWebConsoleMicrointeractionContract(t *testing.T) {
+	style := readIndexStyle(t)
+
+	for _, selectorAndDeclaration := range []struct {
+		selector    string
+		declaration string
+	}{
+		{".agent", "transition:transform .18s ease,filter .18s ease"},
+		{".agent:hover", "transform:translate(-50%,calc(-50% - 8px)) scale(1.04)"},
+		{".agent:active", "transform:translate(-50%,calc(-50% - 3px)) scale(1.01)"},
+		{".agent:hover .avatar", "box-shadow:0 12px 0 rgba(0,0,0,.14)"},
+		{".agent:focus-visible .avatar", "outline:3px solid var(--blue)"},
+		{".agent:focus-visible .avatar", "outline-offset:4px"},
+		{".composer button", "transition:transform .16s ease,box-shadow .16s ease,filter .16s ease"},
+		{".load", "transition:transform .16s ease,box-shadow .16s ease,filter .16s ease"},
+		{".jump-latest", "transition:transform .16s ease,box-shadow .16s ease,filter .16s ease"},
+		{".message-toggle", "transition:transform .16s ease,filter .16s ease"},
+		{".composer button:hover", "transform:translate(-2px,-2px)"},
+		{".load:hover", "transform:translate(-2px,-2px)"},
+		{".jump-latest:hover", "transform:translate(-2px,-2px)"},
+		{".composer button:active", "transform:translate(1px,1px)"},
+		{".load:active", "transform:translate(1px,1px)"},
+		{".jump-latest:active", "transform:translate(1px,1px)"},
+		{".load:disabled:hover", "transform:none"},
+		{".route-agent", "transition:transform .14s ease,filter .14s ease"},
+		{".route-agent:hover", "transform:translateY(-1px)"},
+		{".message-toggle:hover", "transform:translateY(-1px)"},
+	} {
+		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
+			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
+		}
+	}
+
+	for _, selector := range []string{
+		".composer button:focus-visible",
+		".load:focus-visible",
+		".jump-latest:focus-visible",
+		".message-toggle:focus-visible",
+	} {
+		if !ruleDeclares(style, selector, "outline:3px solid var(--blue)") {
+			t.Fatalf("%s should show a visible keyboard focus ring", selector)
+		}
+		if !ruleDeclares(style, selector, "outline-offset:3px") {
+			t.Fatalf("%s should offset the keyboard focus ring", selector)
+		}
+	}
+}
+
 func readIndexHTML(t *testing.T) string {
 	t.Helper()
 
