@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent_id, id);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at, id);
 CREATE INDEX IF NOT EXISTS idx_agents_deleted_name ON agents(deleted, name);
+CREATE INDEX IF NOT EXISTS idx_messages_from_created ON messages(from_agent_id, created_at);
 `
 	_, err := s.db.ExecContext(context.Background(), indexes)
 	return err
@@ -483,7 +484,7 @@ SELECT COUNT(DISTINCT rel.other_id)
           FROM messages m
          WHERE m.from_agent_id = ?
            AND m.created_at >= ?
-        UNION
+        UNION ALL
         SELECT m.from_agent_id AS other_id
           FROM messages m
          WHERE m.to_agent_id = ?

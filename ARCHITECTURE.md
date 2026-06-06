@@ -42,6 +42,7 @@ CREATE TABLE messages (
 
 CREATE INDEX idx_messages_to ON messages(to_agent_id, id);
 CREATE INDEX idx_messages_created ON messages(created_at, id);
+CREATE INDEX idx_messages_from_created ON messages(from_agent_id, created_at);
 ```
 
 SQLite does not enforce foreign keys by default. The server must run

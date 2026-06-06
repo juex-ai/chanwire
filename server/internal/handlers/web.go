@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	stdhtml "html"
-	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -129,13 +128,7 @@ func WebSettingsAgents(s *store.Store, h *hub.Hub) app.HandlerFunc {
 // WebSettingsAgentDelete handles DELETE /api/v1/web/settings/agents/:agent_name.
 func WebSettingsAgentDelete(s *store.Store, h *hub.Hub) app.HandlerFunc {
 	return func(c context.Context, ctx *app.RequestContext) {
-		rawName := ctx.Param("agent_name")
-		name, err := url.PathUnescape(rawName)
-		if err != nil {
-			ctx.JSON(consts.StatusBadRequest, proto.ErrorResponse{Error: "invalid agent name"})
-			return
-		}
-		name = strings.TrimSpace(name)
+		name := strings.TrimSpace(ctx.Param("agent_name"))
 		if name == "" {
 			ctx.JSON(consts.StatusBadRequest, proto.ErrorResponse{Error: "agent name is required"})
 			return
