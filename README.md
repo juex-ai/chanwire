@@ -58,7 +58,10 @@ and the current registered agent name when present.
 Agent-readable JSON is available on one-shot commands with `--format json`,
 including `version`, `status`, `agent register`, `agent list`, and `msg send`.
 
-The server reads a local `.env` if present. The embedded web console is available at `http://127.0.0.1:12306/` and shows online agents, recent agent-to-agent edges, and a live system-wide message feed.
+The server reads a local `.env` if present and listens on `0.0.0.0:$CHANWIRE_PORT`.
+The embedded web console is available at `http://localhost:12306/` locally, or
+`http://<LAN-or-NetBird-IP>:12306/` from another device, and shows online
+agents, recent agent-to-agent edges, and a live system-wide message feed.
 
 ## Tests
 

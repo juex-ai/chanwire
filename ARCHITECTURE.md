@@ -31,26 +31,33 @@ CREATE TABLE agents (
 );
 
 CREATE TABLE messages (
-    id            INTEGER PRIMARY KEY,
-    from_agent_id INTEGER NOT NULL REFERENCES agents(id),
-    to_agent_id   INTEGER NOT NULL REFERENCES agents(id),
-    content       TEXT    NOT NULL,
-    created_at    INTEGER NOT NULL
+    id              INTEGER PRIMARY KEY,
+    from_agent_id   INTEGER REFERENCES agents(id),
+    from_agent_name TEXT    NOT NULL,
+    to_agent_id     INTEGER NOT NULL REFERENCES agents(id),
+    content         TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL
 );
 
 CREATE INDEX idx_messages_to ON messages(to_agent_id, id);
+CREATE INDEX idx_messages_created ON messages(created_at, id);
 ```
 
 SQLite does not enforce foreign keys by default. The server must run
 `PRAGMA foreign_keys = ON` on each connection (set it in the connector
 init or in a `_pragma=foreign_keys(1)` DSN parameter).
 
+`from_agent_id` is nullable so the web console can persist messages from the
+special `system` sender without registering a fake agent. Registered-agent
+messages still store both `from_agent_id` and the denormalized
+`from_agent_name`; migrations upgrade older message tables into this shape.
+
 ### HTTP API (prefix `/api/v1`)
 
 | Method | Path              | Auth | Body / Response                                             |
 | ------ | ----------------- | ---- | ----------------------------------------------------------- |
 | POST   | `/agent/register` | no   | `{agent_name}` → `{agent_name, token}` (idempotent by name) |
-| GET    | `/agent/list`     | yes  | `[{agent_name, last_active_at}]`                            |
+| GET    | `/agent/list`     | yes  | `{agents:[{agent_name, last_active_at}]}`                   |
 | POST   | `/msg/send`       | yes  | `{to_agent, content}` → `{message_id, sent_at}`             |
 | GET    | `/ws`             | yes  | upgrades to WebSocket                                       |
 | GET    | `/web/state`      | no   | online agent graph + latest 20 messages for the web console |
@@ -112,7 +119,7 @@ The online graph is derived from live agent WebSocket connections. Directed edge
 
 - `cobra` root, sub-commands `version`, `status`, `agent register`, `agent list`, `msg send`, `connect`, `mcp`.
 - Token store: `<resolved-config-dir>/agent.json` with `{agent_name, token, endpoint}`. The CLI resolves the config directory from `--homedir`, then `CHANWIRE_DIR`, then the user's home directory, and normalizes the result to `.config/chanwire`.
-- `version` prints build metadata only; `status` prints runtime diagnostics without the saved endpoint.
+- `version` prints build metadata only; `status` prints runtime diagnostics, including the active endpoint from `CHANWIRE_ENDPOINT` or its default, but not the endpoint saved in `agent.json`.
 - Bounded one-shot commands expose machine-readable output with `--format json`; streaming `connect` remains line-oriented.
 - `connect` prints `history_batch` content as one review block; realtime messages print individually as they arrive.
 - Reconnect backoff (seconds): `1, 5, 15, 30, 60, 120`, capped at `120`; resets on successful connect.
