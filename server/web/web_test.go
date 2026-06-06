@@ -239,7 +239,9 @@ func TestRealtimeMessagesRefreshGraphAndAnimateEdges(t *testing.T) {
 
 	for _, token := range []string{
 		"function upsertRealtimeGraphMessage",
+		"let added=false",
 		"state.agents.some(a=>a.agent_name===name)",
+		"state.agents.sort((a,b)=>a.agent_name.localeCompare(b.agent_name))",
 		"state.edges.some(e=>e.from_agent===message.from_agent&&e.to_agent===message.to_agent)",
 		"render({scrollToBottom:stick,pulseEdge:message})",
 		"function drawEdges(pos,opts={})",
@@ -330,6 +332,7 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		"ctx.globalCompositeOperation='lighter'",
 		"requestAnimationFrame(animateSmoke)",
 		"stage.addEventListener('pointermove',ev=>",
+		"if(!smokeMouse.active){smokeMouse.lastX=x;smokeMouse.lastY=y}",
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("web console script should include %q", token)

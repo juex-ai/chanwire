@@ -131,7 +131,7 @@ function openComposer(name,p){
 }
 async function loadState(opts={}){const stick=opts.scrollToBottom||isNearMessagesBottom();const r=await fetch('/api/v1/web/state');const data=await r.json();if(opts.preserveMessages&&state.messages.length)data.messages=state.messages;state=data;hasOlderMessages=state.messages.length>=messagePageSize;render({...opts,scrollToBottom:stick})}
 stage.addEventListener('click',ev=>{if(!document.querySelector('.composer')?.contains(ev.target))closeComposer()});
-function upsertRealtimeGraphMessage(message){if(!message?.from_agent||!message?.to_agent||message.from_agent==='system'||message.to_agent==='system')return false;for(const name of [message.from_agent,message.to_agent]){if(!state.agents.some(a=>a.agent_name===name))state.agents=[...state.agents,{agent_name:name,avatar_seed:name,last_active_at:message.sent_at||Date.now()}]}if(!state.edges.some(e=>e.from_agent===message.from_agent&&e.to_agent===message.to_agent))state.edges=[...state.edges,{from_agent:message.from_agent,to_agent:message.to_agent}];return true}
+function upsertRealtimeGraphMessage(message){if(!message?.from_agent||!message?.to_agent||message.from_agent==='system'||message.to_agent==='system')return false;let added=false;for(const name of [message.from_agent,message.to_agent]){if(!state.agents.some(a=>a.agent_name===name)){state.agents=[...state.agents,{agent_name:name,avatar_seed:name,last_active_at:message.sent_at||Date.now()}];added=true}}if(added)state.agents.sort((a,b)=>a.agent_name.localeCompare(b.agent_name));if(!state.edges.some(e=>e.from_agent===message.from_agent&&e.to_agent===message.to_agent))state.edges=[...state.edges,{from_agent:message.from_agent,to_agent:message.to_agent}];return true}
 function appendRealtimeMessage(message){const stick=isNearMessagesBottom();state.messages=stick?[...state.messages,message].slice(-80):[...state.messages,message];upsertRealtimeGraphMessage(message);render({scrollToBottom:stick,pulseEdge:message})}
 function applyBoardPan(){stage.style.setProperty('--pan-x',`${boardPan.x}px`);stage.style.setProperty('--pan-y',`${boardPan.y}px`)}
 function setupBoardPan(){
@@ -154,7 +154,7 @@ function setupSmokeCanvas(){
   function resizeSmoke(){const rect=stage.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);smokeCanvas.width=Math.max(1,Math.floor(rect.width*dpr));smokeCanvas.height=Math.max(1,Math.floor(rect.height*dpr));smokeCtx.setTransform(dpr,0,0,dpr,0,0)}
   resizeSmoke();
   addEventListener('resize',resizeSmoke);
-  stage.addEventListener('pointermove',ev=>{const rect=stage.getBoundingClientRect(),x=ev.clientX-rect.left,y=ev.clientY-rect.top;smokeMouse.windX+=(x-smokeMouse.lastX)*.018;smokeMouse.windY+=(y-smokeMouse.lastY)*.018;smokeMouse.x=x;smokeMouse.y=y;smokeMouse.lastX=x;smokeMouse.lastY=y;smokeMouse.active=true},{passive:true});
+  stage.addEventListener('pointermove',ev=>{const rect=stage.getBoundingClientRect(),x=ev.clientX-rect.left,y=ev.clientY-rect.top;if(!smokeMouse.active){smokeMouse.lastX=x;smokeMouse.lastY=y}smokeMouse.windX+=(x-smokeMouse.lastX)*.018;smokeMouse.windY+=(y-smokeMouse.lastY)*.018;smokeMouse.x=x;smokeMouse.y=y;smokeMouse.lastX=x;smokeMouse.lastY=y;smokeMouse.active=true},{passive:true});
   stage.addEventListener('pointerleave',()=>{smokeMouse.active=false});
   requestAnimationFrame(animateSmoke);
 }
