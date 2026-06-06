@@ -598,6 +598,9 @@ func TestAgentSendBroadcastsRenderedWebMessage(t *testing.T) {
 	webConn, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{
 		"Origin": {baseURL},
 	})
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err != nil {
 		if resp != nil {
 			t.Fatalf("dial web WS: %v (status %d)", err, resp.StatusCode)

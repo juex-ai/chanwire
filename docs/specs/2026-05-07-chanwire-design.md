@@ -71,7 +71,9 @@ local or virtual network.
 - `GET /web/messages?before_id=<id>` pages older global messages, 20 at a time.
 - `POST /web/msg/send` sends `{to_agent, content}` from the special `system`
   sender.
-- `GET /web/ws` streams web-console `message` and `presence` events.
+- `GET /web/ws` streams web-console `message` events with a `message` payload
+  and `presence` events with only the `type` field, prompting clients to
+  refresh `/web/state`.
 
 Web-console message responses include raw `content` plus safe Markdown-rendered
 `content_html`. The `system` sender is persisted in `messages.from_agent_name`
