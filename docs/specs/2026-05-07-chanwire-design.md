@@ -10,7 +10,9 @@ document wins — file an update PR rather than diverging silently.
 
 ### HTTP
 
-Base URL: `http://<host>:<port>/api/v1` (default `127.0.0.1:12306`).
+Base URL: `http://<host>:<port>/api/v1`. The server listens on
+`0.0.0.0:<CHANWIRE_PORT>` (default `12306`); the CLI default endpoint is
+`http://127.0.0.1:12306`.
 
 All bodies are JSON. All timestamps are unix milliseconds.
 
@@ -57,6 +59,26 @@ All bodies are JSON. All timestamps are unix milliseconds.
 - Client-to-server frames are not used; clients should not send
   payloads. (The WS is one-way for now; sending happens via the HTTP
   API.) The server may receive ping/pong frames for keepalive.
+
+### Embedded web console API
+
+The server also serves a local-dashboard console at `/` and `/web`. Its API is
+intentionally unauthenticated because the service is meant to run on a trusted
+local or virtual network.
+
+- `GET /web/state` returns online agents, recent agent-to-agent edges, and the
+  latest 20 global messages.
+- `GET /web/messages?before_id=<id>` pages older global messages, 20 at a time.
+- `POST /web/msg/send` sends `{to_agent, content}` from the special `system`
+  sender.
+- `GET /web/ws` streams web-console `message` events with a `message` payload
+  and `presence` events with only the `type` field, prompting clients to
+  refresh `/web/state`.
+
+Web-console message responses include raw `content` plus safe Markdown-rendered
+`content_html`. The `system` sender is persisted in `messages.from_agent_name`
+with a null `from_agent_id`; it is not a registered agent and never appears in
+`/agent/list`.
 
 ### WebSocket frame schemas
 
@@ -163,7 +185,9 @@ agent parsing: `version`, `status`, `agent register`, `agent list`, and
 - TLS termination (run behind a reverse proxy if needed).
 - Per-message ACKs from client to server.
 - Token rotation, revocation, or expiry.
-- Read receipts, typing indicators, presence beyond `last_active_at`.
+- Read receipts, typing indicators, human-account presence, or read state
+  beyond registered-agent `last_active_at` and the web console's live
+  WebSocket graph.
 - Group messages, rooms, threads, or any addressing other than
   `to_agent` direct.
 - Rate limiting (add when it becomes a problem).

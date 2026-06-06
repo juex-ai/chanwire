@@ -101,6 +101,7 @@ type WebSendRequest struct {
 }
 
 // WebFrame is sent to unauthenticated web-console WebSocket subscribers.
+// Type is "message" or "presence"; Message is populated only for "message".
 type WebFrame struct {
 	Type    string      `json:"type"`
 	Message *WebMessage `json:"message,omitempty"`

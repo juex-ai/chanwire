@@ -171,6 +171,20 @@ func readFrame(t *testing.T, conn *websocket.Conn) proto.Frame {
 	return f
 }
 
+func readWebFrame(t *testing.T, conn *websocket.Conn) proto.WebFrame {
+	t.Helper()
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read web WS frame: %v", err)
+	}
+	var f proto.WebFrame
+	if err := json.Unmarshal(msg, &f); err != nil {
+		t.Fatalf("unmarshal web frame %q: %v", msg, err)
+	}
+	return f
+}
+
 func assertNoFrame(t *testing.T, conn *websocket.Conn, timeout time.Duration) {
 	t.Helper()
 	if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
@@ -570,6 +584,54 @@ func TestWebMessagesIncludeSafeMarkdownHTML(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(got.ContentHTML), "<script") {
 		t.Fatalf("web message markdown HTML should not emit raw script tags, got %q", got.ContentHTML)
+	}
+}
+
+func TestAgentSendBroadcastsRenderedWebMessage(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	aliceToken := register(t, baseURL, "alice")
+	_ = register(t, baseURL, "bob")
+
+	wsURL := "ws" + baseURL[4:] + "/api/v1/web/ws"
+	webConn, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{
+		"Origin": {baseURL},
+	})
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	if err != nil {
+		if resp != nil {
+			t.Fatalf("dial web WS: %v (status %d)", err, resp.StatusCode)
+		}
+		t.Fatalf("dial web WS: %v", err)
+	}
+	defer webConn.Close()
+
+	content := "**bold**\n\n<script>alert(1)</script>"
+	resp = doPost(t, baseURL+"/api/v1/msg/send", aliceToken, proto.SendRequest{
+		ToAgent: "bob",
+		Content: content,
+	})
+	if resp.StatusCode != 200 {
+		t.Fatalf("agent send: want 200, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+
+	frame := readWebFrame(t, webConn)
+	if frame.Type != "message" || frame.Message == nil {
+		t.Fatalf("unexpected web frame: %+v", frame)
+	}
+	got := frame.Message
+	if got.FromAgent != "alice" || got.ToAgent != "bob" || got.Content != content {
+		t.Fatalf("unexpected web message: %+v", got)
+	}
+	if !strings.Contains(got.ContentHTML, "<strong>bold</strong>") {
+		t.Fatalf("web realtime message should include rendered markdown HTML, got %q", got.ContentHTML)
+	}
+	if strings.Contains(strings.ToLower(got.ContentHTML), "<script") {
+		t.Fatalf("web realtime message markdown HTML should not emit raw script tags, got %q", got.ContentHTML)
 	}
 }
 
