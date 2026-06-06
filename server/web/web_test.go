@@ -393,6 +393,66 @@ func TestWebConsoleMicrointeractionContract(t *testing.T) {
 	}
 }
 
+func TestSettingsAgentAdminPageContract(t *testing.T) {
+	html := readIndexHTML(t)
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	for _, token := range []string{
+		`id="home-page"`,
+		`id="settings-link" href="/settings"`,
+		`aria-label="open settings"`,
+		`id="settings-page" hidden`,
+		`id="settings-back" href="/"`,
+		`data-settings-group="agents"`,
+		`id="settings-agents"`,
+		`id="settings-load"`,
+	} {
+		if !strings.Contains(html, token) {
+			t.Fatalf("settings page should include %q", token)
+		}
+	}
+
+	for _, selectorAndDeclaration := range []struct {
+		selector    string
+		declaration string
+	}{
+		{".settings", "display:grid"},
+		{".settings-body", "grid-template-columns:220px minmax(0,1fr)"},
+		{".settings-nav", "border-right:2px solid var(--text)"},
+		{".settings-nav button.active", "background:var(--lemon)"},
+		{".agents-table", "width:100%"},
+		{".agents-table", "border-collapse:separate"},
+		{".danger", "background:var(--pumpkin)"},
+		{".settings-load", "background:var(--lemon)"},
+	} {
+		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
+			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
+		}
+	}
+
+	for _, token := range []string{
+		"const settingsPageSize=20",
+		"function showRoute",
+		"location.pathname==='/settings'",
+		"history.pushState",
+		"addEventListener('popstate',showRoute)",
+		"function loadSettingsAgents",
+		"`/api/v1/web/settings/agents?limit=${settingsPageSize}&offset=${settingsOffset}`",
+		"function renderSettingsAgents",
+		"related_agent_count",
+		"agent.active?'active':'offline'",
+		"function deleteSettingsAgent",
+		"method:'DELETE'",
+		"encodeURIComponent(name)",
+		"loadState({preserveMessages:true})",
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("settings script should include %q", token)
+		}
+	}
+}
+
 func readIndexHTML(t *testing.T) string {
 	t.Helper()
 

@@ -46,6 +46,7 @@ func main() {
 	// Routes.
 	srv.GET("/", web.Index())
 	srv.GET("/web", web.Index())
+	srv.GET("/settings", web.Index())
 
 	api := srv.Group("/api/v1")
 
@@ -62,6 +63,8 @@ func main() {
 	api.GET("/web/state", handlers.WebState(s, h))
 	api.GET("/web/messages", handlers.WebMessages(s))
 	api.POST("/web/msg/send", handlers.WebMsgSend(s, h))
+	api.GET("/web/settings/agents", handlers.WebSettingsAgents(s, h))
+	api.DELETE("/web/settings/agents/:agent_name", handlers.WebSettingsAgentDelete(s, h))
 	api.GET("/web/ws", handlers.WebWS(h))
 
 	// Graceful shutdown on SIGINT/SIGTERM, bounded by a 10s deadline so a

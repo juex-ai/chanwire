@@ -5,8 +5,10 @@ import (
 	"context"
 	"database/sql"
 	stdhtml "html"
+	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -21,8 +23,10 @@ import (
 )
 
 const (
-	webMessageLimit = 20
-	graphWindow     = 7 * 24 * time.Hour
+	webMessageLimit          = 20
+	webSettingsAgentLimit    = 20
+	webSettingsAgentMaxLimit = 100
+	graphWindow              = 7 * 24 * time.Hour
 )
 
 var webUpgrader = websocket.HertzUpgrader{}
@@ -83,6 +87,96 @@ func WebMessages(s *store.Store) app.HandlerFunc {
 		}
 		ctx.JSON(consts.StatusOK, proto.WebMessagesResponse{Messages: webMessages(messages)})
 	}
+}
+
+// WebSettingsAgents handles GET /api/v1/web/settings/agents for the settings page.
+func WebSettingsAgents(s *store.Store, h *hub.Hub) app.HandlerFunc {
+	return func(c context.Context, ctx *app.RequestContext) {
+		limit, offset, ok := parseSettingsPagination(ctx)
+		if !ok {
+			return
+		}
+
+		agents, hasMore, err := s.ListAdminAgents(c, limit, offset, time.Now().Add(-graphWindow).UnixMilli())
+		if err != nil {
+			ctx.JSON(consts.StatusInternalServerError, proto.ErrorResponse{Error: "internal error"})
+			return
+		}
+
+		online := map[int64]bool{}
+		for _, id := range h.OnlineAgentIDs() {
+			online[id] = true
+		}
+		out := make([]proto.WebSettingsAgent, len(agents))
+		for i, agent := range agents {
+			out[i] = proto.WebSettingsAgent{
+				AgentName:         agent.Name,
+				LastActiveAt:      agent.LastActiveAt,
+				Active:            online[agent.ID],
+				RelatedAgentCount: agent.RelatedAgentCount,
+			}
+		}
+
+		var nextOffset *int
+		if hasMore {
+			next := offset + len(agents)
+			nextOffset = &next
+		}
+		ctx.JSON(consts.StatusOK, proto.WebSettingsAgentsResponse{Agents: out, NextOffset: nextOffset})
+	}
+}
+
+// WebSettingsAgentDelete handles DELETE /api/v1/web/settings/agents/:agent_name.
+func WebSettingsAgentDelete(s *store.Store, h *hub.Hub) app.HandlerFunc {
+	return func(c context.Context, ctx *app.RequestContext) {
+		rawName := ctx.Param("agent_name")
+		name, err := url.PathUnescape(rawName)
+		if err != nil {
+			ctx.JSON(consts.StatusBadRequest, proto.ErrorResponse{Error: "invalid agent name"})
+			return
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			ctx.JSON(consts.StatusBadRequest, proto.ErrorResponse{Error: "agent name is required"})
+			return
+		}
+		if err := s.DeleteAgentByName(c, name); err != nil {
+			if err == sql.ErrNoRows {
+				ctx.JSON(consts.StatusNotFound, proto.ErrorResponse{Error: "unknown agent"})
+				return
+			}
+			ctx.JSON(consts.StatusInternalServerError, proto.ErrorResponse{Error: "internal error"})
+			return
+		}
+		h.BroadcastWeb(proto.WebFrame{Type: "presence"})
+		ctx.JSON(consts.StatusOK, proto.WebSettingsAgentDeleteResponse{AgentName: name, Deleted: true})
+	}
+}
+
+func parseSettingsPagination(ctx *app.RequestContext) (int, int, bool) {
+	limit := webSettingsAgentLimit
+	if raw := ctx.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			ctx.JSON(consts.StatusBadRequest, proto.ErrorResponse{Error: "invalid limit"})
+			return 0, 0, false
+		}
+		limit = parsed
+	}
+	if limit > webSettingsAgentMaxLimit {
+		limit = webSettingsAgentMaxLimit
+	}
+
+	offset := 0
+	if raw := ctx.Query("offset"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			ctx.JSON(consts.StatusBadRequest, proto.ErrorResponse{Error: "invalid offset"})
+			return 0, 0, false
+		}
+		offset = parsed
+	}
+	return limit, offset, true
 }
 
 // WebMsgSend handles unauthenticated web-console sends from the special system sender.

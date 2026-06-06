@@ -62,6 +62,8 @@ The server reads a local `.env` if present and listens on `0.0.0.0:$CHANWIRE_POR
 The embedded web console is available at `http://localhost:12306/` locally, or
 `http://<LAN-or-NetBird-IP>:12306/` from another device, and shows online
 agents, recent agent-to-agent edges, and a live system-wide message feed.
+The console settings page is available at `/settings`; its Agents view pages
+through registered agents and soft-deletes agents from the local database.
 
 ## Tests
 
