@@ -106,7 +106,8 @@ CREATE TABLE IF NOT EXISTS agents (
     name           TEXT    UNIQUE NOT NULL,
     token          TEXT    UNIQUE NOT NULL,
     last_active_at INTEGER,
-    created_at     INTEGER NOT NULL
+    created_at     INTEGER NOT NULL,
+    deleted        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -121,14 +122,50 @@ CREATE TABLE IF NOT EXISTS messages (
 	if _, err := s.db.ExecContext(context.Background(), ddl); err != nil {
 		return err
 	}
+	if err := s.ensureAgentDeletedSchema(context.Background()); err != nil {
+		return err
+	}
 	if err := s.ensureSystemMessageSchema(context.Background()); err != nil {
 		return err
 	}
 	indexes := `
 CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent_id, id);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_agents_deleted_name ON agents(deleted, name);
+CREATE INDEX IF NOT EXISTS idx_messages_from_created ON messages(from_agent_id, created_at);
 `
 	_, err := s.db.ExecContext(context.Background(), indexes)
+	return err
+}
+
+func (s *Store) ensureAgentDeletedSchema(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(agents)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasDeleted := false
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notnull int
+		var dflt any
+		var pk int
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "deleted" {
+			hasDeleted = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasDeleted {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, `ALTER TABLE agents ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0`)
 	return err
 }
 
@@ -228,13 +265,26 @@ type Agent struct {
 	Token        string
 	LastActiveAt *int64
 	CreatedAt    int64
+	Deleted      bool
+}
+
+// AgentAdminInfo is the settings-page projection for one active agent.
+type AgentAdminInfo struct {
+	Agent
+	RelatedAgentCount int
 }
 
 // RegisterAgent registers a new agent or returns the existing one (idempotent on name).
 func (s *Store) RegisterAgent(ctx context.Context, name string) (*Agent, error) {
 	// Check if already exists.
-	existing, err := s.GetAgentByName(ctx, name)
+	existing, err := s.getAgentByNameAny(ctx, name)
 	if err == nil {
+		if existing.Deleted {
+			if err := s.reactivateAgent(ctx, existing.ID); err != nil {
+				return nil, fmt.Errorf("reactivate agent: %w", err)
+			}
+			existing.Deleted = false
+		}
 		return existing, nil
 	}
 	if err != sql.ErrNoRows {
@@ -253,8 +303,14 @@ func (s *Store) RegisterAgent(ctx context.Context, name string) (*Agent, error) 
 	)
 	if err != nil {
 		// Could be a race — try to fetch the existing row.
-		existing, err2 := s.GetAgentByName(ctx, name)
+		existing, err2 := s.getAgentByNameAny(ctx, name)
 		if err2 == nil {
+			if existing.Deleted {
+				if err := s.reactivateAgent(ctx, existing.ID); err != nil {
+					return nil, fmt.Errorf("reactivate agent after race: %w", err)
+				}
+				existing.Deleted = false
+			}
 			return existing, nil
 		}
 		return nil, fmt.Errorf("insert agent: %w", err)
@@ -276,7 +332,7 @@ func (s *Store) RegisterAgent(ctx context.Context, name string) (*Agent, error) 
 // GetAgentByToken looks up an agent by token. Returns sql.ErrNoRows if not found.
 func (s *Store) GetAgentByToken(ctx context.Context, token string) (*Agent, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, token, last_active_at, created_at FROM agents WHERE token = ?`,
+		`SELECT id, name, token, last_active_at, created_at, deleted FROM agents WHERE token = ? AND deleted = 0`,
 		token,
 	)
 	return scanAgent(row)
@@ -285,7 +341,15 @@ func (s *Store) GetAgentByToken(ctx context.Context, token string) (*Agent, erro
 // GetAgentByName looks up an agent by name. Returns sql.ErrNoRows if not found.
 func (s *Store) GetAgentByName(ctx context.Context, name string) (*Agent, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, token, last_active_at, created_at FROM agents WHERE name = ?`,
+		`SELECT id, name, token, last_active_at, created_at, deleted FROM agents WHERE name = ? AND deleted = 0`,
+		name,
+	)
+	return scanAgent(row)
+}
+
+func (s *Store) getAgentByNameAny(ctx context.Context, name string) (*Agent, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, name, token, last_active_at, created_at, deleted FROM agents WHERE name = ?`,
 		name,
 	)
 	return scanAgent(row)
@@ -293,11 +357,34 @@ func (s *Store) GetAgentByName(ctx context.Context, name string) (*Agent, error)
 
 func scanAgent(row *sql.Row) (*Agent, error) {
 	a := &Agent{}
-	err := row.Scan(&a.ID, &a.Name, &a.Token, &a.LastActiveAt, &a.CreatedAt)
+	deleted := 0
+	err := row.Scan(&a.ID, &a.Name, &a.Token, &a.LastActiveAt, &a.CreatedAt, &deleted)
 	if err != nil {
 		return nil, err
 	}
+	a.Deleted = deleted != 0
 	return a, nil
+}
+
+func (s *Store) reactivateAgent(ctx context.Context, agentID int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE agents SET deleted = 0 WHERE id = ?`, agentID)
+	return err
+}
+
+// DeleteAgentByName soft-deletes an active agent by name.
+func (s *Store) DeleteAgentByName(ctx context.Context, name string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE agents SET deleted = 1 WHERE name = ? AND deleted = 0`, name)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // UpdateLastActive sets last_active_at to now for the given agent id.
@@ -313,7 +400,7 @@ func (s *Store) UpdateLastActive(ctx context.Context, agentID int64) error {
 // ListAgents returns all agents ordered by id.
 func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, token, last_active_at, created_at FROM agents ORDER BY id ASC`,
+		`SELECT id, name, token, last_active_at, created_at, deleted FROM agents WHERE deleted = 0 ORDER BY id ASC`,
 	)
 	if err != nil {
 		return nil, err
@@ -323,12 +410,91 @@ func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 	var agents []Agent
 	for rows.Next() {
 		a := Agent{}
-		if err := rows.Scan(&a.ID, &a.Name, &a.Token, &a.LastActiveAt, &a.CreatedAt); err != nil {
+		deleted := 0
+		if err := rows.Scan(&a.ID, &a.Name, &a.Token, &a.LastActiveAt, &a.CreatedAt, &deleted); err != nil {
 			return nil, err
 		}
+		a.Deleted = deleted != 0
 		agents = append(agents, a)
 	}
 	return agents, rows.Err()
+}
+
+// ListAdminAgents returns non-deleted agents ordered for the settings table.
+// hasMore reports whether another page exists after the returned slice.
+func (s *Store) ListAdminAgents(ctx context.Context, limit, offset int, sinceMillis int64) ([]AgentAdminInfo, bool, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, token, last_active_at, created_at, deleted
+		   FROM agents
+		  WHERE deleted = 0
+		  ORDER BY name ASC
+		  LIMIT ? OFFSET ?`,
+		limit+1,
+		offset,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	adminAgents := []AgentAdminInfo{}
+	for rows.Next() {
+		info := AgentAdminInfo{}
+		deleted := 0
+		if err := rows.Scan(&info.ID, &info.Name, &info.Token, &info.LastActiveAt, &info.CreatedAt, &deleted); err != nil {
+			return nil, false, err
+		}
+		info.Deleted = deleted != 0
+		adminAgents = append(adminAgents, info)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	hasMore := len(adminAgents) > limit
+	if hasMore {
+		adminAgents = adminAgents[:limit]
+	}
+	for i := range adminAgents {
+		count, err := s.countRelatedAgentsSince(ctx, adminAgents[i].ID, sinceMillis)
+		if err != nil {
+			return nil, false, err
+		}
+		adminAgents[i].RelatedAgentCount = count
+	}
+	return adminAgents, hasMore, nil
+}
+
+func (s *Store) countRelatedAgentsSince(ctx context.Context, agentID int64, sinceMillis int64) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(DISTINCT rel.other_id)
+  FROM (
+        SELECT m.to_agent_id AS other_id
+          FROM messages m
+         WHERE m.from_agent_id = ?
+           AND m.created_at >= ?
+        UNION ALL
+        SELECT m.from_agent_id AS other_id
+          FROM messages m
+         WHERE m.to_agent_id = ?
+           AND m.from_agent_id IS NOT NULL
+           AND m.created_at >= ?
+       ) rel
+  JOIN agents a ON a.id = rel.other_id
+ WHERE rel.other_id <> ?
+   AND a.deleted = 0`, agentID, sinceMillis, agentID, sinceMillis, agentID).Scan(&count)
+	return count, err
 }
 
 // Message is a row from the messages table (with endpoint agent names resolved).

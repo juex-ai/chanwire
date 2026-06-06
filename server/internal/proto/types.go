@@ -94,6 +94,26 @@ type WebMessagesResponse struct {
 	Messages []WebMessage `json:"messages"`
 }
 
+// WebSettingsAgent is one row in the settings Agents table.
+type WebSettingsAgent struct {
+	AgentName         string `json:"agent_name"`
+	LastActiveAt      *int64 `json:"last_active_at"`
+	Active            bool   `json:"active"`
+	RelatedAgentCount int    `json:"related_agent_count"`
+}
+
+// WebSettingsAgentsResponse is a paginated settings Agents response.
+type WebSettingsAgentsResponse struct {
+	Agents     []WebSettingsAgent `json:"agents"`
+	NextOffset *int               `json:"next_offset,omitempty"`
+}
+
+// WebSettingsAgentDeleteResponse confirms a soft-delete action.
+type WebSettingsAgentDeleteResponse struct {
+	AgentName string `json:"agent_name"`
+	Deleted   bool   `json:"deleted"`
+}
+
 // WebSendRequest is the body for POST /api/v1/web/msg/send.
 type WebSendRequest struct {
 	ToAgent string `json:"to_agent"`

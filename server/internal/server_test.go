@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,8 @@ func testServer(t *testing.T) (baseURL string, cleanup func()) {
 	api.GET("/web/state", handlers.WebState(s, h))
 	api.GET("/web/messages", handlers.WebMessages(s))
 	api.POST("/web/msg/send", handlers.WebMsgSend(s, h))
+	api.GET("/web/settings/agents", handlers.WebSettingsAgents(s, h))
+	api.DELETE("/web/settings/agents/:agent_name", handlers.WebSettingsAgentDelete(s, h))
 	api.GET("/web/ws", handlers.WebWS(h))
 
 	go srv.Spin()
@@ -110,6 +113,19 @@ func doGet(t *testing.T, url, token string) *http.Response {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
+	}
+	return resp
+}
+
+func doDelete(t *testing.T, url, token string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodDelete, url, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE %s: %v", url, err)
 	}
 	return resp
 }
@@ -632,6 +648,124 @@ func TestAgentSendBroadcastsRenderedWebMessage(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(got.ContentHTML), "<script") {
 		t.Fatalf("web realtime message markdown HTML should not emit raw script tags, got %q", got.ContentHTML)
+	}
+}
+
+func TestWebSettingsAgentsAndSoftDelete(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	aliceToken := register(t, baseURL, "alice")
+	bobToken := register(t, baseURL, "bob")
+	register(t, baseURL, "cara")
+
+	bobConn := dialWS(t, baseURL, bobToken)
+	defer bobConn.Close()
+
+	resp := doPost(t, baseURL+"/api/v1/msg/send", aliceToken, proto.SendRequest{
+		ToAgent: "bob",
+		Content: "alice to bob",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("alice->bob: want 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp = doPost(t, baseURL+"/api/v1/msg/send", bobToken, proto.SendRequest{
+		ToAgent: "cara",
+		Content: "bob to cara",
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("bob->cara: want 200, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = doGet(t, baseURL+"/api/v1/web/settings/agents?limit=2", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("settings agents: want 200, got %d", resp.StatusCode)
+	}
+	var settingsPage proto.WebSettingsAgentsResponse
+	decodeBody(t, resp, &settingsPage)
+	if len(settingsPage.Agents) != 2 {
+		t.Fatalf("settings agents page: want 2 agents, got %+v", settingsPage.Agents)
+	}
+	if settingsPage.NextOffset == nil || *settingsPage.NextOffset != 2 {
+		t.Fatalf("settings agents next offset: got %+v", settingsPage.NextOffset)
+	}
+	if settingsPage.Agents[0].AgentName != "alice" || settingsPage.Agents[1].AgentName != "bob" {
+		t.Fatalf("settings agents should be sorted by name, got %+v", settingsPage.Agents)
+	}
+	if !settingsPage.Agents[1].Active {
+		t.Fatalf("bob should be active while websocket is connected: %+v", settingsPage.Agents[1])
+	}
+	if settingsPage.Agents[1].RelatedAgentCount != 2 {
+		t.Fatalf("bob related agent count: want 2, got %d", settingsPage.Agents[1].RelatedAgentCount)
+	}
+
+	resp = doDelete(t, baseURL+"/api/v1/web/settings/agents/"+url.PathEscape("bob"), "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete bob: want 200, got %d", resp.StatusCode)
+	}
+	var deleted proto.WebSettingsAgentDeleteResponse
+	decodeBody(t, resp, &deleted)
+	if !deleted.Deleted || deleted.AgentName != "bob" {
+		t.Fatalf("delete response: got %+v", deleted)
+	}
+
+	resp = doGet(t, baseURL+"/api/v1/agent/list", aliceToken)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("agent/list after delete: want 200, got %d", resp.StatusCode)
+	}
+	var agentList proto.AgentListResponse
+	decodeBody(t, resp, &agentList)
+	for _, agent := range agentList.Agents {
+		if agent.AgentName == "bob" {
+			t.Fatalf("deleted bob should be hidden from agent/list: %+v", agentList.Agents)
+		}
+	}
+
+	resp = doPost(t, baseURL+"/api/v1/msg/send", aliceToken, proto.SendRequest{
+		ToAgent: "bob",
+		Content: "after delete",
+	})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("send to deleted bob: want 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = doGet(t, baseURL+"/api/v1/agent/list", bobToken)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("deleted bob token: want 401, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = doGet(t, baseURL+"/api/v1/web/settings/agents?limit=10", "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("settings agents after delete: want 200, got %d", resp.StatusCode)
+	}
+	decodeBody(t, resp, &settingsPage)
+	for _, agent := range settingsPage.Agents {
+		if agent.AgentName == "bob" {
+			t.Fatalf("deleted bob should be hidden from settings agents: %+v", settingsPage.Agents)
+		}
+	}
+
+	bobTokenAgain := register(t, baseURL, "bob")
+	if bobTokenAgain != bobToken {
+		t.Fatalf("reactivated bob should keep token: before=%q after=%q", bobToken, bobTokenAgain)
+	}
+	resp = doGet(t, baseURL+"/api/v1/agent/list", bobTokenAgain)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reactivated bob token: want 200, got %d", resp.StatusCode)
+	}
+	decodeBody(t, resp, &agentList)
+	foundBob := false
+	for _, agent := range agentList.Agents {
+		if agent.AgentName == "bob" {
+			foundBob = true
+		}
+	}
+	if !foundBob {
+		t.Fatalf("reactivated bob should return to agent/list: %+v", agentList.Agents)
 	}
 }
 

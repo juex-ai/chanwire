@@ -6,6 +6,7 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,6 +98,77 @@ func TestRegisterIdempotent(t *testing.T) {
 	}
 	if a1.ID != a2.ID {
 		t.Fatalf("idempotent register: ids differ (%d vs %d)", a1.ID, a2.ID)
+	}
+}
+
+func TestAgentSoftDeleteAndReactivation(t *testing.T) {
+	s := fileBackedStore(t)
+	ctx := context.Background()
+
+	alice, err := s.RegisterAgent(ctx, "alice")
+	if err != nil {
+		t.Fatalf("register alice: %v", err)
+	}
+	bob, err := s.RegisterAgent(ctx, "bob")
+	if err != nil {
+		t.Fatalf("register bob: %v", err)
+	}
+	if _, err := s.InsertMessage(ctx, alice.ID, alice.Name, bob.ID, "before delete"); err != nil {
+		t.Fatalf("insert alice->bob: %v", err)
+	}
+
+	if err := s.DeleteAgentByName(ctx, "bob"); err != nil {
+		t.Fatalf("delete bob: %v", err)
+	}
+
+	agents, err := s.ListAgents(ctx)
+	if err != nil {
+		t.Fatalf("list agents after delete: %v", err)
+	}
+	if len(agents) != 1 || agents[0].Name != "alice" {
+		t.Fatalf("deleted agent should be hidden from normal list, got %+v", agents)
+	}
+	if _, err := s.GetAgentByName(ctx, "bob"); err != sql.ErrNoRows {
+		t.Fatalf("deleted agent should be hidden by name: %v", err)
+	}
+	if _, err := s.GetAgentByToken(ctx, bob.Token); err != sql.ErrNoRows {
+		t.Fatalf("deleted agent token should not authenticate: %v", err)
+	}
+	adminAgents, hasMore, err := s.ListAdminAgents(ctx, 10, 0, 0)
+	if err != nil {
+		t.Fatalf("list admin agents after delete: %v", err)
+	}
+	if hasMore {
+		t.Fatal("list admin agents should not report more rows")
+	}
+	for _, agent := range adminAgents {
+		if agent.Name == "bob" {
+			t.Fatalf("deleted agent should be hidden from admin list: %+v", adminAgents)
+		}
+	}
+
+	bobAgain, err := s.RegisterAgent(ctx, "bob")
+	if err != nil {
+		t.Fatalf("reactivate bob: %v", err)
+	}
+	if bobAgain.ID != bob.ID || bobAgain.Token != bob.Token {
+		t.Fatalf("reactivated agent should keep id/token: before=%+v after=%+v", bob, bobAgain)
+	}
+	adminAgents, _, err = s.ListAdminAgents(ctx, 10, 0, 0)
+	if err != nil {
+		t.Fatalf("list admin agents after reactivation: %v", err)
+	}
+	foundBob := false
+	for _, agent := range adminAgents {
+		if agent.Name == "bob" {
+			foundBob = true
+			if agent.RelatedAgentCount != 1 {
+				t.Fatalf("bob related count: want 1, got %d", agent.RelatedAgentCount)
+			}
+		}
+	}
+	if !foundBob {
+		t.Fatalf("reactivated agent should return to admin list: %+v", adminAgents)
 	}
 }
 
