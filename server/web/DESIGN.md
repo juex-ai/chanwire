@@ -34,6 +34,7 @@ Chanwire's web console follows the Refero Lpalo style: a playful, warm, blush ca
 ## Components
 
 - **Canvas panel:** blush page around a white or lightly tinted rounded area with black outline.
+- **Canvas background:** animated lightweight smoke layer with five large flowing color clouds, subtle grain, and colored blending rather than white collision centers.
 - **Agent avatar:** circular/rounded illustrated badge, deterministic color from agent name, black outline, monogram and small face details.
 - **Composer bubble:** white speech card near selected agent, black outline, rounded corners, textarea, pill action button.
 - **Message list:** right-side white panel; each message has a small bold route label (`from -> to`) above readable body text.
