@@ -72,6 +72,18 @@ func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 	if !ruleDeclares(style, ".message.collapsed .content", "-webkit-line-clamp:5") {
 		t.Fatal("collapsed message content should clamp to five lines")
 	}
+	if !ruleDeclares(style, ".message-body", "position:relative") {
+		t.Fatal("message cards should wrap content and toggle in a positioned body")
+	}
+	if !ruleDeclares(style, ".message.collapsed .message-body:after", "background:linear-gradient(90deg,rgba(255,255,255,0),var(--white) 45%,var(--white))") {
+		t.Fatal("collapsed messages should fade the end of the final visible text line")
+	}
+	if !ruleDeclares(style, ".message.collapsed .message-toggle", "position:absolute") {
+		t.Fatal("collapsed message toggle should sit over the final text line")
+	}
+	if !ruleDeclares(style, ".message.expanded .message-toggle", "position:static") {
+		t.Fatal("expanded message toggle should return to the normal document flow")
+	}
 
 	for _, token := range []string{
 		"content_html",
@@ -80,6 +92,7 @@ func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 		"setupMessageToggles",
 		"message-toggle",
 		"data-message-id",
+		`<div class="message-body"><div class="content">`,
 		"isExpanded",
 		"visible.has(id)",
 		"card.dataset.messageId",
@@ -306,30 +319,43 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 	}{
 		{".board", "background:#fbfbf8"},
 		{".smoke", "position:absolute"},
-		{".smoke", "filter:blur(16px) saturate(1.25)"},
+		{".smoke", "filter:blur(22px) saturate(1.45) contrast(1.05)"},
 		{".smoke", "pointer-events:none"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
 			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
 		}
 	}
+	if got := strings.Count(script, "rgb:'"); got < 5 {
+		t.Fatalf("smoke background should render at least five color clouds, got %d", got)
+	}
 
 	for _, stale := range []string{
 		"radial-gradient(circle at 15% 20%",
 		"radial-gradient(circle at 88% 18%",
 		"radial-gradient(circle at 65% 84%",
+		"ctx.globalCompositeOperation='lighter'",
+		"rgba(255,255,255,${mix})",
 	} {
 		if strings.Contains(style, stale) {
 			t.Fatalf("graph board should remove stale static color-ball background %q", stale)
+		}
+		if strings.Contains(script, stale) {
+			t.Fatalf("graph board should remove stale smoke implementation %q", stale)
 		}
 	}
 
 	for _, token := range []string{
 		"const smokeBlobs=[",
+		"const smokeGrain=Array.from",
 		"function setupSmokeCanvas",
 		"function animateSmoke",
+		"function mixRGB",
 		"const mouseInfluence=",
-		"ctx.globalCompositeOperation='lighter'",
+		"ctx.globalCompositeOperation='screen'",
+		"for(let j=0;j<26;j++)",
+		"smokeGrain.forEach",
+		"mixRGB(a.rgb,b.rgb)",
 		"requestAnimationFrame(animateSmoke)",
 		"stage.addEventListener('pointermove',ev=>",
 		"if(!smokeMouse.active){smokeMouse.lastX=x;smokeMouse.lastY=y}",
@@ -412,6 +438,9 @@ func TestSettingsAgentAdminPageContract(t *testing.T) {
 			t.Fatalf("settings page should include %q", token)
 		}
 	}
+	if strings.Contains(html, `<div class="status" id="status"></div><a class="icon-button settings-link"`) {
+		t.Fatal("settings link should not sit inside the left stage header")
+	}
 
 	for _, selectorAndDeclaration := range []struct {
 		selector    string
@@ -425,6 +454,10 @@ func TestSettingsAgentAdminPageContract(t *testing.T) {
 		{".agents-table", "border-collapse:separate"},
 		{".danger", "background:var(--pumpkin)"},
 		{".settings-load", "background:var(--lemon)"},
+		{".settings-link", "position:absolute"},
+		{".settings-link", "right:24px"},
+		{".settings-link", "top:20px"},
+		{".settings-link", "z-index:4"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
 			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
