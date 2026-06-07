@@ -75,11 +75,17 @@ func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 	if !ruleDeclares(style, ".message-body", "position:relative") {
 		t.Fatal("message cards should wrap content and toggle in a positioned body")
 	}
-	if !ruleDeclares(style, ".message.collapsed .message-body:after", "background:linear-gradient(90deg,rgba(255,255,255,0),var(--white) 45%,var(--white))") {
+	if !ruleDeclares(style, ".message.collapsed .message-body:after", "width:34%") {
+		t.Fatal("collapsed message fade should stay compact instead of blanking too much text before more")
+	}
+	if !ruleDeclares(style, ".message.collapsed .message-body:after", "background:linear-gradient(90deg,rgba(255,255,255,0),rgba(255,255,255,.86) 68%,var(--white))") {
 		t.Fatal("collapsed messages should fade the end of the final visible text line")
 	}
 	if !ruleDeclares(style, ".message.collapsed .message-toggle", "position:absolute") {
 		t.Fatal("collapsed message toggle should sit over the final text line")
+	}
+	if !ruleDeclares(style, ".message.collapsed .message-toggle", "box-shadow:0 0 0 2px var(--white)") {
+		t.Fatal("collapsed message toggle should use a tight halo so the pre-more blank stays small")
 	}
 	if !ruleDeclares(style, ".message.expanded .message-toggle", "position:static") {
 		t.Fatal("expanded message toggle should return to the normal document flow")
