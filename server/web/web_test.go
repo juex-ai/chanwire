@@ -286,9 +286,10 @@ func TestGraphBoardSketchVisualContract(t *testing.T) {
 	}{
 		{".edge-sketch", "stroke-linecap:round"},
 		{".edge-sketch", "stroke-linejoin:round"},
-		{".avatar svg", "width:68px"},
+		{".avatar svg", "width:78px"},
 		{".avatar svg", "stroke-linecap:round"},
 		{".avatar svg", "stroke-linejoin:round"},
+		{".avatar-ink", "fill:var(--text)"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
 			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
@@ -302,6 +303,9 @@ func TestGraphBoardSketchVisualContract(t *testing.T) {
 		"agentAvatar(a.agent_name)",
 		"maxR=Math.max(70,Math.min((w-132)/2,(h-150)/2))",
 		"clamp(Math.min(w,h)*.33,92,maxR)",
+		"jitter=(seed%7)-3",
+		"sx=x2-x1",
+		"L ${m1x} ${m1y} L ${m2x} ${m2y}",
 		`<path class="${lineClass} edge-sketch"`,
 		`marker id="arrow"`,
 		`stroke-linejoin="round"`,
@@ -321,6 +325,8 @@ func TestGraphBoardSketchVisualContract(t *testing.T) {
 		".mono",
 		`<line class=`,
 		`fill="#000"`,
+		" C ${c1x}",
+		"robot",
 	} {
 		if strings.Contains(script, stale) || strings.Contains(style, stale) {
 			t.Fatalf("graph board should remove stale abstract avatar or straight-edge token %q", stale)
