@@ -472,8 +472,12 @@ func TestSettingsAgentAdminPageContract(t *testing.T) {
 
 	for _, token := range []string{
 		"const settingsPageSize=20",
+		"let homeNeedsRefresh=false",
 		"function showRoute",
 		"location.pathname==='/settings'",
+		"function refreshHomeAfterVisible",
+		"requestAnimationFrame(()=>loadState({preserveMessages:true}))",
+		"if(homeNeedsRefresh){homeNeedsRefresh=false;refreshHomeAfterVisible()}else requestAnimationFrame(()=>render({scrollToBottom:isNearMessagesBottom()}))",
 		"history.pushState",
 		"addEventListener('popstate',showRoute)",
 		"function loadSettingsAgents",
@@ -484,11 +488,24 @@ func TestSettingsAgentAdminPageContract(t *testing.T) {
 		"function deleteSettingsAgent",
 		"method:'DELETE'",
 		"encodeURIComponent(name)",
-		"loadState({preserveMessages:true})",
+		"homeNeedsRefresh=true",
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("settings script should include %q", token)
 		}
+	}
+
+	deleteStart := strings.Index(script, "async function deleteSettingsAgent")
+	if deleteStart < 0 {
+		t.Fatal("settings script should include deleteSettingsAgent")
+	}
+	deleteEnd := strings.Index(script[deleteStart:], "stage.addEventListener")
+	if deleteEnd < 0 {
+		t.Fatal("settings script should keep deleteSettingsAgent before stage setup")
+	}
+	deleteScript := script[deleteStart : deleteStart+deleteEnd]
+	if strings.Contains(deleteScript, "loadState({preserveMessages:true})") {
+		t.Fatal("settings delete should defer home state reload until the home page is visible")
 	}
 }
 
