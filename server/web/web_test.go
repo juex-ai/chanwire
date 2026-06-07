@@ -386,7 +386,7 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 	}{
 		{".board", "background:linear-gradient(135deg,#f8fcff 0%,#f5f8ff 46%,#fbfbf8 100%)"},
 		{".smoke", "position:absolute"},
-		{".smoke", "filter:saturate(1.28) contrast(1.04)"},
+		{".smoke", "filter:blur(16px) saturate(1.28) contrast(1.04)"},
 		{".smoke", "pointer-events:none"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
@@ -408,6 +408,7 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		"if(b.x<.08||b.x>.92)b.vx*=-1",
 		"ctx.arc(px,py,size,0",
 		"for(let j=0;j<26;j++)",
+		"const pts=[]",
 	} {
 		if strings.Contains(style, stale) {
 			t.Fatalf("graph board should remove stale static color-ball background %q", stale)
@@ -424,15 +425,17 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		"homeY:a.y",
 		"const smokeParticles=Array.from({length:220}",
 		"const smokeGrain=Array.from({length:260}",
+		"const organicPts=Array.from({length:14},()=>({x:0,y:0}))",
 		"function setupSmokeCanvas",
 		"function animateSmoke",
 		"function organicSmokePath",
 		"function mixRGB",
-		"const mouseInfluence=smokeMouse.active?.35:0",
+		"const mouseInfluence=smokeMouse.active ? 0.35 : 0",
 		"smokeTick+=.0038",
 		"ctx.globalCompositeOperation='screen'",
 		"for(let j=0;j<16;j++)",
 		"for(let k=0;k<14;k++)",
+		"const p=organicPts[k]",
 		"ctx.quadraticCurveTo",
 		"smokeParticles.forEach",
 		"smokeGrain.forEach",
