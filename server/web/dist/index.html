@@ -48,14 +48,14 @@ const smokeBlobs=[
   {rgb:'68,215,182',x:.32,y:.76,vx:.00022,vy:-.00018,r:.36,phase:4.4},
   {rgb:'255,209,102',x:.78,y:.7,vx:-.00026,vy:-.00016,r:.34,phase:5.7}
 ];
-const smokeGrain=Array.from({length:120},(_,i)=>({x:((i*37)%101)/100,y:((i*53)%103)/102,s:1+(i%3)*.45,a:.014+(i%5)*.003,speed:.5+(i%7)*.08}));
+const smokeGrain=Array.from({length:120},(_,i)=>{const a=.014+(i%5)*.003;return{x:((i*37)%101)/100,y:((i*53)%103)/102,s:1+(i%3)*.45,speed:.5+(i%7)*.08,color:`rgba(34,20,16,${a})`}});
 const smokeMouse={x:0,y:0,lastX:0,lastY:0,windX:0,windY:0,active:false};
 let smokeCanvas=null,smokeCtx=null,smokeTick=0;
 function hash(s){let h=0;for(const ch of s)h=(h*31+ch.charCodeAt(0))>>>0;return h}
 function color(n){return colors[hash(n)%colors.length]}
 function initials(n){return n.split(/[-_\s.]+/).map(x=>x[0]).join('').slice(0,2).toUpperCase()||'?'}
 function clamp(n,min,max){return Math.min(Math.max(n,min),max)}
-function mixRGB(a,b){const av=a.split(',').map(Number),bv=b.split(',').map(Number);return av.map((v,i)=>Math.round((v+bv[i])/2)).join(',')}
+const mixCache={};function mixRGB(a,b){const k=a+'_'+b;if(mixCache[k])return mixCache[k];const av=a.split(',').map(Number),bv=b.split(',').map(Number);return mixCache[k]=av.map((v,i)=>Math.round((v+bv[i])/2)).join(',')}
 function positions(){const w=$('agents').parentElement.clientWidth,h=$('agents').parentElement.clientHeight;const cx=w/2,cy=h/2+18,r=Math.max(130,Math.min(w,h)*.33);return Object.fromEntries(state.agents.map((a,i)=>{const ang=-Math.PI/2+i*2*Math.PI/Math.max(1,state.agents.length);return[a.agent_name,{x:cx+Math.cos(ang)*r,y:cy+Math.sin(ang)*r}]}))}
 function render(opts={}){
   const pos=positions();
@@ -263,7 +263,7 @@ function animateSmoke(){
   });
   for(let i=0;i<smokeBlobs.length;i++)for(let j=i+1;j<smokeBlobs.length;j++){const a=smokeBlobs[i],b=smokeBlobs[j],dx=(a.x-b.x)*w,dy=(a.y-b.y)*h,dist=Math.hypot(dx,dy),mix=clamp(1-dist/(span*.5),0,.16);if(mix>0){const px=(a.x+b.x)*w/2,py=(a.y+b.y)*h/2,rgb=mixRGB(a.rgb,b.rgb),g=ctx.createRadialGradient(px,py,0,px,py,span*.22);g.addColorStop(0,`rgba(${rgb},${mix})`);g.addColorStop(1,`rgba(${rgb},0)`);ctx.fillStyle=g;ctx.beginPath();ctx.arc(px,py,span*.22,0,Math.PI*2);ctx.fill()}}
   ctx.globalCompositeOperation='multiply';
-  smokeGrain.forEach((g,i)=>{const x=((g.x+Math.sin(smokeTick*(.7+g.speed)+i)*.018)%1+1)%1,y=((g.y+Math.cos(smokeTick*(.62+g.speed)+i)*.014)%1+1)%1;ctx.fillStyle=`rgba(34,20,16,${g.a})`;ctx.fillRect(x*w,y*h,g.s,g.s)});
+  smokeGrain.forEach((g,i)=>{const x=((g.x+Math.sin(smokeTick*(.7+g.speed)+i)*.018)%1+1)%1,y=((g.y+Math.cos(smokeTick*(.62+g.speed)+i)*.014)%1+1)%1;ctx.fillStyle=g.color;ctx.fillRect(x*w,y*h,g.s,g.s)});
   smokeMouse.windX*=.9;smokeMouse.windY*=.9;
   requestAnimationFrame(animateSmoke);
 }
