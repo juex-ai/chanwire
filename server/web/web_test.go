@@ -384,9 +384,9 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		selector    string
 		declaration string
 	}{
-		{".board", "background:#fbfbf8"},
+		{".board", "background:linear-gradient(135deg,#f8fcff 0%,#f5f8ff 46%,#fbfbf8 100%)"},
 		{".smoke", "position:absolute"},
-		{".smoke", "filter:blur(22px) saturate(1.45) contrast(1.05)"},
+		{".smoke", "filter:saturate(1.28) contrast(1.04)"},
 		{".smoke", "pointer-events:none"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
@@ -403,6 +403,11 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		"radial-gradient(circle at 65% 84%",
 		"ctx.globalCompositeOperation='lighter'",
 		"rgba(255,255,255,${mix})",
+		"255,111,89",
+		"255,209,102",
+		"if(b.x<.08||b.x>.92)b.vx*=-1",
+		"ctx.arc(px,py,size,0",
+		"for(let j=0;j<26;j++)",
 	} {
 		if strings.Contains(style, stale) {
 			t.Fatalf("graph board should remove stale static color-ball background %q", stale)
@@ -413,19 +418,28 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 	}
 
 	for _, token := range []string{
-		"const smokeBlobs=[",
-		"const smokeGrain=Array.from",
+		"const smokeAnchors=[",
+		"const smokeBlobs=smokeAnchors.map",
+		"homeX:a.x",
+		"homeY:a.y",
+		"const smokeParticles=Array.from({length:220}",
+		"const smokeGrain=Array.from({length:260}",
 		"function setupSmokeCanvas",
 		"function animateSmoke",
+		"function organicSmokePath",
 		"function mixRGB",
-		"const mouseInfluence=",
+		"const mouseInfluence=smokeMouse.active?.35:0",
+		"smokeTick+=.0038",
 		"ctx.globalCompositeOperation='screen'",
-		"for(let j=0;j<26;j++)",
+		"for(let j=0;j<16;j++)",
+		"for(let k=0;k<14;k++)",
+		"ctx.quadraticCurveTo",
+		"smokeParticles.forEach",
 		"smokeGrain.forEach",
 		"mixRGB(a.rgb,b.rgb)",
 		"requestAnimationFrame(animateSmoke)",
 		"stage.addEventListener('pointermove',ev=>",
-		"if(!smokeMouse.active){smokeMouse.lastX=x;smokeMouse.lastY=y}",
+		"smokeMouse.windX+=(x-smokeMouse.lastX)*.006",
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("web console script should include %q", token)
