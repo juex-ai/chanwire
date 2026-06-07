@@ -249,7 +249,7 @@ func TestRealtimeMessagesRefreshGraphAndAnimateEdges(t *testing.T) {
 	style := readIndexStyle(t)
 	script := readIndexScript(t)
 
-	if !ruleDeclares(style, ".edge-pulse", "animation:edgePulse .86s ease-out") {
+	if !ruleDeclares(style, ".edge-pulse .edge-sketch", "animation:edgePulse .86s ease-out") {
 		t.Fatal("realtime graph edges should expose a transient pulse animation class")
 	}
 	if !strings.Contains(style, "@keyframes edgePulse") {
@@ -273,6 +273,67 @@ func TestRealtimeMessagesRefreshGraphAndAnimateEdges(t *testing.T) {
 
 	if strings.Contains(script, "renderMessages({scrollToBottom:stick})}") {
 		t.Fatal("realtime messages should redraw the graph, not only the message list")
+	}
+}
+
+func TestGraphBoardSketchVisualContract(t *testing.T) {
+	style := readIndexStyle(t)
+	script := readIndexScript(t)
+
+	for _, selectorAndDeclaration := range []struct {
+		selector    string
+		declaration string
+	}{
+		{".edge-sketch", "stroke-linecap:round"},
+		{".edge-sketch", "stroke-linejoin:round"},
+		{".avatar svg", "width:78px"},
+		{".avatar svg", "stroke-linecap:round"},
+		{".avatar svg", "stroke-linejoin:round"},
+		{".avatar-ink", "fill:var(--text)"},
+	} {
+		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
+			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
+		}
+	}
+
+	for _, token := range []string{
+		"function avatarVariant",
+		"function agentAvatar",
+		"function sketchEdgePath",
+		"agentAvatar(a.agent_name)",
+		`class="avatar-ink"`,
+		"maxR=Math.max(70,Math.min((w-132)/2,(h-150)/2))",
+		"clamp(Math.min(w,h)*.33,92,maxR)",
+		"jitter=(seed%7)-3",
+		"sx=x2-x1",
+		"L ${m1x} ${m1y} L ${m2x} ${m2y}",
+		"d2=sketchEdgePath(a,b,p.a+p.b,3)",
+		`<path class="${lineClass} edge-sketch"`,
+		`marker id="arrow"`,
+		`stroke-linejoin="round"`,
+	} {
+		if !strings.Contains(script, token) {
+			t.Fatalf("web console script should include %q", token)
+		}
+	}
+
+	for _, stale := range []string{
+		"function initials",
+		`<span class="mono">`,
+		`<span class="mouth">`,
+		".avatar:before",
+		".avatar:after",
+		".mouth",
+		".mono",
+		`<line class=`,
+		"d2=sketchEdgePath(a,b,p.b+p.a,10)",
+		`fill="#000"`,
+		" C ${c1x}",
+		"robot",
+	} {
+		if strings.Contains(script, stale) || strings.Contains(style, stale) {
+			t.Fatalf("graph board should remove stale abstract avatar or straight-edge token %q", stale)
+		}
 	}
 }
 
