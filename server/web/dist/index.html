@@ -37,6 +37,7 @@ const bottomStickThreshold=48;
 let state={agents:[],edges:[],messages:[]},selected=null,hasOlderMessages=false,loadingOlderMessages=false;
 const settingsPageSize=20;
 let settingsAgents=[],settingsOffset=0,settingsNextOffset=null,settingsLoading=false;
+let homeNeedsRefresh=false;
 const $=id=>document.getElementById(id);
 const stage=document.querySelector('.stage');
 const expandedMessages=new Set();
@@ -151,7 +152,8 @@ function openComposer(name,p){
 }
 async function loadState(opts={}){const stick=opts.scrollToBottom||isNearMessagesBottom();const r=await fetch('/api/v1/web/state');const data=await r.json();if(opts.preserveMessages&&state.messages.length)data.messages=state.messages;state=data;hasOlderMessages=state.messages.length>=messagePageSize;render({...opts,scrollToBottom:stick})}
 function navigate(path){if(location.pathname===path)return;history.pushState({},'',path);showRoute()}
-function showRoute(){const isSettings=location.pathname==='/settings';$('home-page').hidden=isSettings;$('settings-page').hidden=!isSettings;if(isSettings)loadSettingsAgents({reset:true})}
+function refreshHomeAfterVisible(){requestAnimationFrame(()=>loadState({preserveMessages:true}))}
+function showRoute(){const isSettings=location.pathname==='/settings';$('home-page').hidden=isSettings;$('settings-page').hidden=!isSettings;if(isSettings)loadSettingsAgents({reset:true});else{requestAnimationFrame(()=>render({scrollToBottom:isNearMessagesBottom()}));if(homeNeedsRefresh){homeNeedsRefresh=false;refreshHomeAfterVisible()}}}
 function setupSettingsNavigation(){
   $('settings-link').onclick=ev=>{ev.preventDefault();navigate('/settings')};
   $('settings-back').onclick=ev=>{ev.preventDefault();navigate('/')};
@@ -200,7 +202,7 @@ async function deleteSettingsAgent(name,button){
     if(!r.ok)throw new Error('delete failed');
     toast('agent deleted');
     await loadSettingsAgents({reset:true});
-    loadState({preserveMessages:true});
+    homeNeedsRefresh=true;
   }catch{
     toast('delete failed');
     if(button)button.disabled=false;
