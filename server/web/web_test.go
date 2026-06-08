@@ -286,10 +286,13 @@ func TestGraphBoardSketchVisualContract(t *testing.T) {
 	}{
 		{".edge-sketch", "stroke-linecap:round"},
 		{".edge-sketch", "stroke-linejoin:round"},
-		{".avatar svg", "width:78px"},
+		{".avatar", "background:var(--white)"},
+		{".avatar svg", "width:80px"},
 		{".avatar svg", "stroke-linecap:round"},
 		{".avatar svg", "stroke-linejoin:round"},
-		{".avatar-ink", "fill:var(--text)"},
+		{".boring-avatar-bg", "stroke:var(--text)"},
+		{".boring-avatar-shape", "stroke:var(--text)"},
+		{".boring-avatar-line", "fill:none"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
 			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
@@ -297,11 +300,18 @@ func TestGraphBoardSketchVisualContract(t *testing.T) {
 	}
 
 	for _, token := range []string{
+		"const boringPalettes=[",
 		"function avatarVariant",
+		"function avatarColors",
 		"function agentAvatar",
 		"function sketchEdgePath",
 		"agentAvatar(a.agent_name)",
-		`class="avatar-ink"`,
+		"['beam','bauhaus','ring']",
+		`class="boring-avatar boring-${variant}"`,
+		`class="boring-avatar-bg"`,
+		`class="boring-avatar-shape"`,
+		`class="boring-avatar-line"`,
+		"<clipPath",
 		"maxR=Math.max(70,Math.min((w-132)/2,(h-150)/2))",
 		"clamp(Math.min(w,h)*.33,92,maxR)",
 		"jitter=(seed%7)-3",
@@ -323,8 +333,15 @@ func TestGraphBoardSketchVisualContract(t *testing.T) {
 		`<span class="mouth">`,
 		".avatar:before",
 		".avatar:after",
+		".avatar-fill",
+		".avatar-ink",
 		".mouth",
 		".mono",
+		"hair=[",
+		"eyes=[",
+		"mouth=[",
+		"<circle class=\"avatar-ink\"",
+		"q1-18 18-20",
 		`<line class=`,
 		"d2=sketchEdgePath(a,b,p.b+p.a,10)",
 		`fill="#000"`,
