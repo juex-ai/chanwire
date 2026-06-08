@@ -393,7 +393,7 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		{".smoke", "pointer-events:none"},
 		{".spark", "position:absolute"},
 		{".spark", "filter:none"},
-		{".spark", "opacity:.86"},
+		{".spark", "opacity:.66"},
 		{".spark", "pointer-events:none"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
@@ -428,6 +428,7 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 	for _, token := range []string{
 		"const smokeAnchors=[",
 		"const smokeBlobs=smokeAnchors.map",
+		"flow:.88+i*.09",
 		"homeX:a.x",
 		"homeY:a.y",
 		"const smokeParticles=Array.from({length:220}",
@@ -443,9 +444,11 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		"function organicSmokePath",
 		"function mixRGB",
 		"const mouseInfluence=smokeMouse.active ? 0.35 : 0",
-		"smokeTick+=.0038",
+		"smokeTick+=.0062",
 		"ctx.globalCompositeOperation='screen'",
-		"for(let j=0;j<16;j++)",
+		"for(let j=0;j<14;j++)",
+		"dist/(span*.56)",
+		"size=span*.24",
 		"for(let k=0;k<14;k++)",
 		"const p=organicPts[k]",
 		"ctx.quadraticCurveTo",
