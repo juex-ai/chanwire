@@ -286,8 +286,15 @@ func TestGraphBoardSketchVisualContract(t *testing.T) {
 	}{
 		{".edge-sketch", "stroke-linecap:round"},
 		{".edge-sketch", "stroke-linejoin:round"},
-		{".avatar", "background:var(--white)"},
-		{".avatar svg", "width:80px"},
+		{".avatar", "width:82px"},
+		{".avatar", "height:82px"},
+		{".avatar", "border:0"},
+		{".avatar", "background:transparent"},
+		{".avatar", "margin:0 auto 6px"},
+		{".avatar svg", "width:96px"},
+		{".avatar svg", "height:96px"},
+		{".avatar svg", "display:block"},
+		{".avatar svg", "margin:-7px"},
 		{".avatar svg", "stroke-linecap:round"},
 		{".avatar svg", "stroke-linejoin:round"},
 		{".boring-avatar-bg", "stroke:var(--text)"},
@@ -347,6 +354,9 @@ func TestGraphBoardSketchVisualContract(t *testing.T) {
 		`fill="#000"`,
 		" C ${c1x}",
 		"robot",
+		".avatar{height:92px",
+		".avatar{height:92px;border:3px solid var(--text)",
+		".avatar svg{position:static;width:80px",
 	} {
 		if strings.Contains(script, stale) || strings.Contains(style, stale) {
 			t.Fatalf("graph board should remove stale abstract avatar or straight-edge token %q", stale)
@@ -509,7 +519,7 @@ func TestWebConsoleMicrointeractionContract(t *testing.T) {
 		{".agent:active", "transform:translate(-50%,calc(-50% - 3px)) scale(1.01)"},
 		{".agent:hover .avatar", "box-shadow:0 12px 0 rgba(0,0,0,.14)"},
 		{".agent:focus-visible .avatar", "outline:3px solid var(--blue)"},
-		{".agent:focus-visible .avatar", "outline-offset:4px"},
+		{".agent:focus-visible .avatar", "outline-offset:3px"},
 		{".composer button", "transition:transform .16s ease,box-shadow .16s ease,filter .16s ease"},
 		{".load", "transition:transform .16s ease,box-shadow .16s ease,filter .16s ease"},
 		{".jump-latest", "transition:transform .16s ease,box-shadow .16s ease,filter .16s ease"},
