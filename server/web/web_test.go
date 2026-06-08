@@ -380,8 +380,8 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 	if !strings.Contains(html, `<canvas class="smoke" id="smoke"`) {
 		t.Fatal("graph board should include an animated smoke canvas layer")
 	}
-	if !strings.Contains(html, `<canvas class="spark" id="spark"`) {
-		t.Fatal("graph board should include a separate crisp particle canvas layer")
+	if strings.Contains(html, `<canvas class="spark" id="spark"`) {
+		t.Fatal("graph board should not include a particle canvas layer")
 	}
 	for _, selectorAndDeclaration := range []struct {
 		selector    string
@@ -391,10 +391,6 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		{".smoke", "position:absolute"},
 		{".smoke", "filter:blur(16px) saturate(1.28) contrast(1.04)"},
 		{".smoke", "pointer-events:none"},
-		{".spark", "position:absolute"},
-		{".spark", "filter:none"},
-		{".spark", "opacity:.66"},
-		{".spark", "pointer-events:none"},
 	} {
 		if !ruleDeclares(style, selectorAndDeclaration.selector, selectorAndDeclaration.declaration) {
 			t.Fatalf("%s should declare %s", selectorAndDeclaration.selector, selectorAndDeclaration.declaration)
@@ -416,6 +412,17 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		"ctx.arc(px,py,size,0",
 		"for(let j=0;j<26;j++)",
 		"const pts=[]",
+		".spark",
+		"const smokeParticles=",
+		"const sparkDust=",
+		"const smokeGrain=",
+		"function drawSparkParticles",
+		"sparkCanvas",
+		"sparkCtx",
+		"smokeParticles.forEach",
+		"sparkDust.forEach",
+		"smokeGrain.forEach",
+		"drawSparkParticles(",
 	} {
 		if strings.Contains(style, stale) {
 			t.Fatalf("graph board should remove stale static color-ball background %q", stale)
@@ -431,31 +438,22 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		"flow:.88+i*.09",
 		"homeX:a.x",
 		"homeY:a.y",
-		"const smokeParticles=Array.from({length:220}",
-		"const sparkDust=Array.from({length:96}",
-		"const smokeGrain=Array.from({length:260}",
 		"const organicPts=Array.from({length:14},()=>({x:0,y:0}))",
 		"function setupSmokeCanvas",
-		"sparkCanvas=$('spark')",
-		"sparkCtx=sparkCanvas.getContext('2d')",
 		"function resizeLayer",
 		"function animateSmoke",
-		"function drawSparkParticles",
 		"function organicSmokePath",
 		"function mixRGB",
 		"const mouseInfluence=smokeMouse.active ? 0.35 : 0",
 		"smokeTick+=.0062",
 		"ctx.globalCompositeOperation='screen'",
 		"for(let j=0;j<14;j++)",
-		"dist/(span*.56)",
-		"size=span*.24",
+		"dist/(span*.62)",
+		"size=span*.3",
+		"rgba(${rgb},${mix*.45})",
 		"for(let k=0;k<14;k++)",
 		"const p=organicPts[k]",
 		"ctx.quadraticCurveTo",
-		"smokeParticles.forEach",
-		"sparkDust.forEach",
-		"smokeGrain.forEach",
-		"drawSparkParticles(sparkCtx,sparkCanvas.clientWidth,sparkCanvas.clientHeight",
 		"mixRGB(a.rgb,b.rgb)",
 		"requestAnimationFrame(animateSmoke)",
 		"stage.addEventListener('pointermove',ev=>",
@@ -475,8 +473,8 @@ func TestSmokeBackgroundCanvasContract(t *testing.T) {
 		t.Fatal("web console script should expose an animateSmoke body before connect")
 	}
 	animateBody := script[animateStart : animateStart+connectStart]
-	if strings.Contains(animateBody, "smokeParticles.forEach") {
-		t.Fatal("crisp spark particles should not be drawn onto the blurred smoke canvas")
+	if strings.Contains(animateBody, "ctx.fillRect") || strings.Contains(animateBody, "ctx.arc") {
+		t.Fatal("smoke animation should use only organic cloud paths, not particle dots")
 	}
 }
 
