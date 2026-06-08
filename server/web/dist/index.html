@@ -267,7 +267,8 @@ function animateSmoke(){
   if(!smokeCtx||!smokeCanvas){requestAnimationFrame(animateSmoke);return}
   const ctx=smokeCtx;
   const w=smokeCanvas.clientWidth,h=smokeCanvas.clientHeight,span=Math.max(w,h);
-  smokeTick+=.0062;
+  const now=performance.now(),dt=Math.min(now-(animateSmoke.last||now),34);
+  animateSmoke.last=now;smokeTick+=dt*.000744;
   ctx.clearRect(0,0,w,h);
   ctx.globalCompositeOperation='screen';
   const mouseInfluence=smokeMouse.active ? 0.35 : 0;
