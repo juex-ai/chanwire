@@ -15,7 +15,7 @@ type RegisterResponse struct {
 // AgentInfo is one entry in the /agent/list response.
 type AgentInfo struct {
 	AgentName    string `json:"agent_name"`
-	LastActiveAt *int64 `json:"last_active_at"` // unix millis, null when never active
+	LastActiveAt *int64 `json:"last_active_at"` // unix seconds, null when never active
 }
 
 // AgentListResponse is the success body for GET /api/v1/agent/list.

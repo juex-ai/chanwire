@@ -47,3 +47,19 @@ func TestConnectionLifecycleSerializesConcurrentResetAndStop(t *testing.T) {
 	cancel()
 	srv.stopConnect()
 }
+
+func TestMessageTimeFormattingUsesLocalTimezone(t *testing.T) {
+	origLocal := time.Local
+	time.Local = time.FixedZone("client-test", 8*60*60)
+	t.Cleanup(func() { time.Local = origLocal })
+
+	sec := int64(1778154123)
+	got := safeFrameTS(&sec)
+	if got != "2026-05-07 19:42:03" {
+		t.Fatalf("safeFrameTS should format unix seconds in local time, got %q", got)
+	}
+
+	if got := safeISO(sec); got != "2026-05-07T19:42:03+08:00" {
+		t.Fatalf("safeISO should format unix seconds in local time, got %q", got)
+	}
+}

@@ -96,7 +96,7 @@ func WebSettingsAgents(s *store.Store, h *hub.Hub) app.HandlerFunc {
 			return
 		}
 
-		agents, hasMore, err := s.ListAdminAgents(c, limit, offset, time.Now().Add(-graphWindow).UnixMilli())
+		agents, hasMore, err := s.ListAdminAgents(c, limit, offset, time.Now().Add(-graphWindow).Unix())
 		if err != nil {
 			ctx.JSON(consts.StatusInternalServerError, proto.ErrorResponse{Error: "internal error"})
 			return
@@ -268,7 +268,7 @@ func webEdges(ctx context.Context, s *store.Store, allAgents []store.Agent, agen
 	for _, agent := range allAgents {
 		idToName[agent.ID] = agent.Name
 	}
-	edges, err := s.ListMessageEdgesSince(ctx, time.Now().Add(-graphWindow).UnixMilli())
+	edges, err := s.ListMessageEdgesSince(ctx, time.Now().Add(-graphWindow).Unix())
 	if err != nil {
 		return nil, err
 	}

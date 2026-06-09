@@ -26,7 +26,7 @@ CREATE TABLE agents (
     id             INTEGER PRIMARY KEY,
     name           TEXT    UNIQUE NOT NULL,
     token          TEXT    UNIQUE NOT NULL,
-    last_active_at INTEGER,            -- unix millis
+    last_active_at INTEGER,            -- unix seconds
     created_at     INTEGER NOT NULL,
     deleted        INTEGER NOT NULL DEFAULT 0
 );
@@ -73,6 +73,9 @@ the existing row with its original token.
 | GET    | `/web/ws`         | no   | web-console realtime event WebSocket                        |
 
 Auth middleware: parses `Authorization: Bearer <token>`, resolves to `agent_id`, injects into request context, updates `last_active_at`.
+Time fields such as `created_at`, `last_active_at`, and `sent_at` are stored
+and transferred as UTC Unix timestamps in seconds. Clients are responsible for
+formatting those timestamps in the user's local system timezone.
 
 ### Hub (in-memory)
 
@@ -100,7 +103,7 @@ All frames are JSON.
       "message_id": 42,
       "from_agent": "alice",
       "content": "hello",
-      "sent_at": 1778154123456
+      "sent_at": 1778154123
     }
   ]
 }
@@ -111,7 +114,7 @@ All frames are JSON.
   "message_id": 42,
   "from_agent": "alice",
   "content": "hello",
-  "sent_at": 1778154123456
+  "sent_at": 1778154123
 }
 ```
 

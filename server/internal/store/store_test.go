@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/juex-ai/chanwire/server/internal/store"
 )
@@ -98,6 +99,105 @@ func TestRegisterIdempotent(t *testing.T) {
 	}
 	if a1.ID != a2.ID {
 		t.Fatalf("idempotent register: ids differ (%d vs %d)", a1.ID, a2.ID)
+	}
+}
+
+func TestTimestampsAreStoredAsUnixSeconds(t *testing.T) {
+	s := fileBackedStore(t)
+	ctx := context.Background()
+
+	before := time.Now().UTC().Unix()
+	alice, err := s.RegisterAgent(ctx, "alice")
+	if err != nil {
+		t.Fatalf("register alice: %v", err)
+	}
+	bob, err := s.RegisterAgent(ctx, "bob")
+	if err != nil {
+		t.Fatalf("register bob: %v", err)
+	}
+	if err := s.UpdateLastActive(ctx, alice.ID); err != nil {
+		t.Fatalf("update last active: %v", err)
+	}
+	msg, err := s.InsertMessage(ctx, alice.ID, alice.Name, bob.ID, "seconds")
+	if err != nil {
+		t.Fatalf("insert message: %v", err)
+	}
+	after := time.Now().UTC().Unix()
+
+	aliceAgain, err := s.GetAgentByName(ctx, "alice")
+	if err != nil {
+		t.Fatalf("get alice: %v", err)
+	}
+	for label, ts := range map[string]int64{
+		"agent.created_at":   alice.CreatedAt,
+		"last_active_at":     *aliceAgain.LastActiveAt,
+		"message.created_at": msg.CreatedAt,
+	} {
+		if ts < before || ts > after {
+			t.Fatalf("%s should be current unix seconds, got %d outside [%d,%d]", label, ts, before, after)
+		}
+		if ts > 9999999999 {
+			t.Fatalf("%s should be second precision, got millisecond-looking timestamp %d", label, ts)
+		}
+	}
+}
+
+func TestMigrateConvertsLegacyMillisecondTimestampsToSeconds(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy-time.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
+	}
+	legacy := int64(1778154123456)
+	if _, err := db.Exec(`
+CREATE TABLE agents (
+    id             INTEGER PRIMARY KEY,
+    name           TEXT    UNIQUE NOT NULL,
+    token          TEXT    UNIQUE NOT NULL,
+    last_active_at INTEGER,
+    created_at     INTEGER NOT NULL,
+    deleted        INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE messages (
+    id              INTEGER PRIMARY KEY,
+    from_agent_id   INTEGER REFERENCES agents(id),
+    from_agent_name TEXT    NOT NULL,
+    to_agent_id     INTEGER NOT NULL REFERENCES agents(id),
+    content         TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL
+);
+INSERT INTO agents (id, name, token, last_active_at, created_at) VALUES (1, 'alice', 'tok-a', ?, ?);
+INSERT INTO agents (id, name, token, last_active_at, created_at) VALUES (2, 'bob', 'tok-b', NULL, ?);
+INSERT INTO messages (id, from_agent_id, from_agent_name, to_agent_id, content, created_at)
+VALUES (1, 1, 'alice', 2, 'legacy', ?);
+`, legacy, legacy, legacy, legacy); err != nil {
+		_ = db.Close()
+		t.Fatalf("seed legacy sqlite: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close raw sqlite: %v", err)
+	}
+
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open migrated store: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	ctx := context.Background()
+	alice, err := s.GetAgentByName(ctx, "alice")
+	if err != nil {
+		t.Fatalf("get migrated alice: %v", err)
+	}
+	if alice.CreatedAt != 1778154123 || alice.LastActiveAt == nil || *alice.LastActiveAt != 1778154123 {
+		t.Fatalf("agent timestamps should migrate to seconds, got %+v", alice)
+	}
+	messages, err := s.ListMessages(ctx, 20, 0)
+	if err != nil {
+		t.Fatalf("list migrated messages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].CreatedAt != 1778154123 {
+		t.Fatalf("message timestamp should migrate to seconds, got %+v", messages)
 	}
 }
 

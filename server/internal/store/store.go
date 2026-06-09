@@ -128,6 +128,9 @@ CREATE TABLE IF NOT EXISTS messages (
 	if err := s.ensureSystemMessageSchema(context.Background()); err != nil {
 		return err
 	}
+	if err := s.ensureUnixSecondTimestamps(context.Background()); err != nil {
+		return err
+	}
 	indexes := `
 CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent_id, id);
 CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at, id);
@@ -244,9 +247,28 @@ SELECT m.id,
 	return tx.Commit()
 }
 
-// nowMillis returns the current time as unix milliseconds.
-func nowMillis() int64 {
-	return time.Now().UnixMilli()
+func (s *Store) ensureUnixSecondTimestamps(ctx context.Context) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	for _, stmt := range []string{
+		`UPDATE agents SET created_at = created_at / 1000 WHERE created_at > 9999999999`,
+		`UPDATE agents SET last_active_at = last_active_at / 1000 WHERE last_active_at IS NOT NULL AND last_active_at > 9999999999`,
+		`UPDATE messages SET created_at = created_at / 1000 WHERE created_at > 9999999999`,
+	} {
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// nowUnix returns the current instant as a unix timestamp in seconds.
+func nowUnix() int64 {
+	return time.Now().Unix()
 }
 
 // generateToken creates a 32-byte random token, base64url-encoded without padding.
@@ -296,7 +318,7 @@ func (s *Store) RegisterAgent(ctx context.Context, name string) (*Agent, error) 
 		return nil, fmt.Errorf("generate token: %w", err)
 	}
 
-	now := nowMillis()
+	now := nowUnix()
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO agents (name, token, created_at) VALUES (?, ?, ?)`,
 		name, token, now,
@@ -389,7 +411,7 @@ func (s *Store) DeleteAgentByName(ctx context.Context, name string) error {
 
 // UpdateLastActive sets last_active_at to now for the given agent id.
 func (s *Store) UpdateLastActive(ctx context.Context, agentID int64) error {
-	now := nowMillis()
+	now := nowUnix()
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE agents SET last_active_at = ? WHERE id = ?`,
 		now, agentID,
@@ -422,7 +444,7 @@ func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 
 // ListAdminAgents returns non-deleted agents ordered for the settings table.
 // hasMore reports whether another page exists after the returned slice.
-func (s *Store) ListAdminAgents(ctx context.Context, limit, offset int, sinceMillis int64) ([]AgentAdminInfo, bool, error) {
+func (s *Store) ListAdminAgents(ctx context.Context, limit, offset int, sinceUnix int64) ([]AgentAdminInfo, bool, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -466,7 +488,7 @@ func (s *Store) ListAdminAgents(ctx context.Context, limit, offset int, sinceMil
 		adminAgents = adminAgents[:limit]
 	}
 	for i := range adminAgents {
-		count, err := s.countRelatedAgentsSince(ctx, adminAgents[i].ID, sinceMillis)
+		count, err := s.countRelatedAgentsSince(ctx, adminAgents[i].ID, sinceUnix)
 		if err != nil {
 			return nil, false, err
 		}
@@ -475,7 +497,7 @@ func (s *Store) ListAdminAgents(ctx context.Context, limit, offset int, sinceMil
 	return adminAgents, hasMore, nil
 }
 
-func (s *Store) countRelatedAgentsSince(ctx context.Context, agentID int64, sinceMillis int64) (int, error) {
+func (s *Store) countRelatedAgentsSince(ctx context.Context, agentID int64, sinceUnix int64) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx, `
 SELECT COUNT(DISTINCT rel.other_id)
@@ -493,7 +515,7 @@ SELECT COUNT(DISTINCT rel.other_id)
        ) rel
   JOIN agents a ON a.id = rel.other_id
  WHERE rel.other_id <> ?
-   AND a.deleted = 0`, agentID, sinceMillis, agentID, sinceMillis, agentID).Scan(&count)
+   AND a.deleted = 0`, agentID, sinceUnix, agentID, sinceUnix, agentID).Scan(&count)
 	return count, err
 }
 
@@ -524,7 +546,7 @@ func (s *Store) InsertSystemMessage(ctx context.Context, toAgentID int64, conten
 }
 
 func (s *Store) insertMessage(ctx context.Context, fromAgentID *int64, fromAgentName string, toAgentID int64, content string) (*Message, error) {
-	now := nowMillis()
+	now := nowUnix()
 	var fromAgentValue any
 	var storedFromAgentID *int64
 	if fromAgentID != nil {
@@ -626,14 +648,14 @@ func (s *Store) ListMessages(ctx context.Context, limit int, beforeID int64) ([]
 }
 
 // ListMessageEdgesSince returns directed sender/recipient relationships for
-// messages created at or after sinceMillis. System-originated messages are not
+// messages created at or after sinceUnix. System-originated messages are not
 // agent-to-agent edges and are intentionally omitted.
-func (s *Store) ListMessageEdgesSince(ctx context.Context, sinceMillis int64) ([]MessageEdge, error) {
+func (s *Store) ListMessageEdgesSince(ctx context.Context, sinceUnix int64) ([]MessageEdge, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT DISTINCT m.from_agent_id, m.to_agent_id
   FROM messages m
  WHERE m.from_agent_id IS NOT NULL
-   AND m.created_at >= ?`, sinceMillis)
+   AND m.created_at >= ?`, sinceUnix)
 	if err != nil {
 		return nil, err
 	}
