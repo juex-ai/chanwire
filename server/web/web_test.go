@@ -99,6 +99,9 @@ func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 		"message-toggle",
 		"data-message-id",
 		`<div class="message-body"><div class="content">`,
+		"formatWhen(m.sent_at)",
+		"function formatWhen(sec)",
+		"new Date(sec*1000).toLocaleString()",
 		"isExpanded",
 		"visible.has(id)",
 		"card.dataset.messageId",
@@ -108,6 +111,14 @@ func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 	} {
 		if !strings.Contains(script, token) {
 			t.Fatalf("web console script should include %q", token)
+		}
+	}
+	for _, stale := range []string{
+		"new Date(m.sent_at).toLocaleString()",
+		"function formatWhen(ms)",
+	} {
+		if strings.Contains(script, stale) {
+			t.Fatalf("web console script should convert unix seconds before local display, found stale token %q", stale)
 		}
 	}
 }

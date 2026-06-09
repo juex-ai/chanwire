@@ -520,9 +520,8 @@ func (s *Server) log(format string, args ...any) {
 }
 
 // Helper functions
-func safeISO(ms int64) string {
-	t := time.UnixMilli(ms)
-	return t.UTC().Format(time.RFC3339)
+func safeISO(sec int64) string {
+	return time.Unix(sec, 0).Local().Format(time.RFC3339)
 }
 
 func formatFrame(kind string, frame *client.Frame) string {
@@ -548,11 +547,11 @@ func pluralize(word string, n int) string {
 	return word + "s"
 }
 
-func safeFrameTS(ms *int64) string {
-	if ms == nil {
+func safeFrameTS(sec *int64) string {
+	if sec == nil {
 		return "(unknown)"
 	}
-	return time.UnixMilli(*ms).UTC().Format("2006-01-02 15:04:05")
+	return time.Unix(*sec, 0).Local().Format("2006-01-02 15:04:05")
 }
 
 func join(lines []string, sep string) string {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // runArgs runs the root command with the given args, capturing stdout/stderr.
@@ -310,7 +311,7 @@ func TestMsgSend404ReturnsError(t *testing.T) {
 func TestMsgSendJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"message_id":42,"sent_at":1778154123456}`))
+		w.Write([]byte(`{"message_id":42,"sent_at":1778154123}`))
 	}))
 	defer srv.Close()
 
@@ -342,7 +343,7 @@ func TestMsgSendJSON(t *testing.T) {
 func TestAgentListJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"agents":[{"agent_name":"alice","last_active_at":1778154123456},{"agent_name":"bob","last_active_at":null}]}`))
+		w.Write([]byte(`{"agents":[{"agent_name":"alice","last_active_at":1778154123},{"agent_name":"bob","last_active_at":null}]}`))
 	}))
 	defer srv.Close()
 
@@ -386,7 +387,7 @@ func TestAgentListJSON(t *testing.T) {
 func TestAgentListFormatJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"agents":[{"agent_name":"alice","last_active_at":1778154123456}]}`))
+		w.Write([]byte(`{"agents":[{"agent_name":"alice","last_active_at":1778154123}]}`))
 	}))
 	defer srv.Close()
 
@@ -420,9 +421,13 @@ func TestAgentListFormatJSON(t *testing.T) {
 
 // TestAgentListTable verifies the default human-readable table format.
 func TestAgentListTable(t *testing.T) {
+	origLocal := time.Local
+	time.Local = time.FixedZone("client-test", 8*60*60)
+	t.Cleanup(func() { time.Local = origLocal })
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"agents":[{"agent_name":"bob","last_active_at":null}]}`))
+		w.Write([]byte(`{"agents":[{"agent_name":"alice","last_active_at":1778154123},{"agent_name":"bob","last_active_at":null}]}`))
 	}))
 	defer srv.Close()
 
@@ -439,6 +444,9 @@ func TestAgentListTable(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "NAME") || !strings.Contains(stdout, "LAST_ACTIVE") {
 		t.Errorf("expected header in output, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "2026-05-07 19:42:03") {
+		t.Errorf("expected local-time last active in output, got:\n%s", stdout)
 	}
 	if !strings.Contains(stdout, "(never)") {
 		t.Errorf("expected (never) in output, got:\n%s", stdout)

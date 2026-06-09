@@ -169,16 +169,16 @@ func printFrame(w io.Writer, f *Frame) {
 	}
 }
 
-// formatTS converts unix milliseconds to "2006-01-02 15:04:05" (UTC).
-func formatTS(ms *int64) string {
-	if ms == nil {
+// formatTS converts unix seconds to "2006-01-02 15:04:05" in the client local timezone.
+func formatTS(sec *int64) string {
+	if sec == nil {
 		return "(unknown)"
 	}
-	return formatTSValue(*ms)
+	return formatTSValue(*sec)
 }
 
-func formatTSValue(ms int64) string {
-	return time.UnixMilli(ms).UTC().Format("2006-01-02 15:04:05")
+func formatTSValue(sec int64) string {
+	return time.Unix(sec, 0).Local().Format("2006-01-02 15:04:05")
 }
 
 func pluralize(word string, n int) string {

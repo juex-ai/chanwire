@@ -78,8 +78,8 @@ func (c *HTTPClient) Register(agentName string) (*RegisterResponse, error) {
 
 // Agent represents one entry in the list response.
 type Agent struct {
-	AgentName    string  `json:"agent_name"`
-	LastActiveAt *int64  `json:"last_active_at"` // unix millis, null if never
+	AgentName    string `json:"agent_name"`
+	LastActiveAt *int64 `json:"last_active_at"` // unix seconds, null if never
 }
 
 // ListResponse is the 200 OK body from GET /agent/list.

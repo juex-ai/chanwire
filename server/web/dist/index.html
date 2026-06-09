@@ -99,7 +99,7 @@ function renderMessages(opts={}){
   const pane=$('messages'),stick=opts.scrollToBottom||(!opts.preserveTop&&isNearMessagesBottom()),prevHeight=pane.scrollHeight,prevTop=pane.scrollTop;
   const visible=new Set(state.messages.map(m=>m.message_id));
   for(const id of expandedMessages)if(!visible.has(id))expandedMessages.delete(id);
-  pane.innerHTML=renderOlderMessagesControl()+state.messages.map(m=>{const isExpanded=expandedMessages.has(m.message_id);return `<article class="message ${isExpanded?'expanded':'collapsed'}" data-message-id="${m.message_id}"><div class="route"><span class="route-agent" style="--agent-color:${color(m.from_agent)}">${esc(m.from_agent)}</span><span class="route-arrow">-></span><span class="route-agent" style="--agent-color:${color(m.to_agent)}">${esc(m.to_agent)}</span></div><div class="message-body"><div class="content">${renderMessageContent(m)}</div><button class="message-toggle" type="button" aria-expanded="${isExpanded}">${isExpanded?'less':'more'}</button></div><div class="time">${new Date(m.sent_at).toLocaleString()}</div></article>`}).join('');
+  pane.innerHTML=renderOlderMessagesControl()+state.messages.map(m=>{const isExpanded=expandedMessages.has(m.message_id);return `<article class="message ${isExpanded?'expanded':'collapsed'}" data-message-id="${m.message_id}"><div class="route"><span class="route-agent" style="--agent-color:${color(m.from_agent)}">${esc(m.from_agent)}</span><span class="route-arrow">-></span><span class="route-agent" style="--agent-color:${color(m.to_agent)}">${esc(m.to_agent)}</span></div><div class="message-body"><div class="content">${renderMessageContent(m)}</div><button class="message-toggle" type="button" aria-expanded="${isExpanded}">${isExpanded?'less':'more'}</button></div><div class="time">${formatWhen(m.sent_at)}</div></article>`}).join('');
   setupOlderMessagesControl();
   setupMessageToggles();
   if(opts.preserveTop){pane.scrollTop=prevTop+(pane.scrollHeight-prevHeight);updateJumpToLatest();return}
@@ -207,7 +207,7 @@ function renderSettingsAgents(){
   const load=$('settings-load');
   if(load)load.hidden=settingsNextOffset===null;
 }
-function formatWhen(ms){return ms?new Date(ms).toLocaleString():'never'}
+function formatWhen(sec){return sec?new Date(sec*1000).toLocaleString():'never'}
 async function deleteSettingsAgent(name,button){
   if(!name)return;
   if(button)button.disabled=true;

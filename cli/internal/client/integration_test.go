@@ -73,7 +73,7 @@ func TestRegisterTrailingSlash(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	now := int64(1778154123456)
+	now := int64(1778154123)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/agent/list" {
 			http.NotFound(w, r)
@@ -115,7 +115,7 @@ func TestList(t *testing.T) {
 }
 
 func TestSendOK(t *testing.T) {
-	sentAt := int64(1778154123456)
+	sentAt := int64(1778154123)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/msg/send" {
 			http.NotFound(w, r)
@@ -176,6 +176,10 @@ func noWait(ctx context.Context, _ time.Duration) error {
 }
 
 func TestWSFrames(t *testing.T) {
+	origLocal := time.Local
+	time.Local = time.FixedZone("client-test", 8*60*60)
+	t.Cleanup(func() { time.Local = origLocal })
+
 	type Frame struct {
 		Type      string `json:"type"`
 		MessageID *int64 `json:"message_id,omitempty"`
@@ -190,8 +194,8 @@ func TestWSFrames(t *testing.T) {
 		} `json:"messages,omitempty"`
 	}
 
-	ts1 := int64(1778154100000)
-	ts2 := int64(1778154200000)
+	ts1 := int64(1778154100)
+	ts2 := int64(1778154200)
 	id1 := int64(1)
 	id2 := int64(2)
 
@@ -239,8 +243,8 @@ func TestWSFrames(t *testing.T) {
 
 	output := buf.String()
 
-	t1 := time.UnixMilli(ts1).UTC().Format("2006-01-02 15:04:05")
-	t2 := time.UnixMilli(ts2).UTC().Format("2006-01-02 15:04:05")
+	t1 := time.Unix(ts1, 0).Local().Format("2006-01-02 15:04:05")
+	t2 := time.Unix(ts2, 0).Local().Format("2006-01-02 15:04:05")
 
 	expected := []string{
 		"-- history batch (one-time review, 1 message) --",

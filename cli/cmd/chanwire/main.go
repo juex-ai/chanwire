@@ -189,7 +189,7 @@ func agentRegisterCmd() *cobra.Command {
 //
 // With --json, output is one line of JSON matching the wire schema:
 //
-//	{"agents":[{"agent_name":"alice","last_active_at":1778154123456}, ...]}
+//	{"agents":[{"agent_name":"alice","last_active_at":1778154123}, ...]}
 //
 // The plugin (T5) parses --json output.
 func agentListCmd() *cobra.Command {
@@ -224,7 +224,7 @@ func agentListCmd() *cobra.Command {
 			for _, a := range resp.Agents {
 				lastActive := "(never)"
 				if a.LastActiveAt != nil {
-					t := time.UnixMilli(*a.LastActiveAt).UTC()
+					t := time.Unix(*a.LastActiveAt, 0).Local()
 					lastActive = t.Format("2006-01-02 15:04:05")
 				}
 				fmt.Fprintf(out, "%-20s  %s\n", a.AgentName, lastActive)
