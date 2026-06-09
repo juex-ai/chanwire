@@ -62,14 +62,17 @@ func rootCmd() *cobra.Command {
 }
 
 func mcpCmd() *cobra.Command {
+	var forceChannel bool
+
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Run the chanwire MCP server (stdio)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			srv := mcp.NewServer(version)
+			srv := mcp.NewServer(version, forceChannel)
 			return srv.Run(cmd.Context())
 		},
 	}
+	cmd.Flags().BoolVar(&forceChannel, "channel", false, "Force claude/channel notifications even if the MCP client does not advertise the capability")
 	return cmd
 }
 

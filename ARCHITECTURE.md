@@ -15,7 +15,7 @@
                                 +---------------------+
 ```
 
-The CLI speaks HTTP + WebSocket protocol to the server. The `mcp` subcommand runs an MCP server that exposes tools; it streams messages via claude/channel notifications after the MCP client declares the experimental `claude/channel` capability.
+The CLI speaks HTTP + WebSocket protocol to the server. The `mcp` subcommand runs an MCP server that exposes tools; it streams messages via claude/channel notifications when started with `--channel`, or when the MCP client declares the experimental `claude/channel` capability.
 
 ## Server
 
@@ -139,4 +139,5 @@ The browser also applies realtime agent-to-agent web WS message frames to the vi
 - `version` prints build metadata only; `status` prints runtime diagnostics, including the active endpoint from `CHANWIRE_ENDPOINT` or its default, but not the endpoint saved in `agent.json`.
 - Bounded one-shot commands expose machine-readable output with `--format json`; streaming `connect` remains line-oriented.
 - `connect` prints `history_batch` content as one review block; realtime messages print individually as they arrive.
+- `mcp --channel` forces WebSocket streaming and `notifications/claude/channel` delivery even when the MCP client does not advertise the experimental `claude/channel` capability. Without `--channel`, MCP streaming remains capability-gated.
 - Reconnect backoff (seconds): `1, 5, 15, 30, 60, 120`, capped at `120`; resets on successful connect.

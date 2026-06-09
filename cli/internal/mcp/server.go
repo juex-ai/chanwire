@@ -38,12 +38,13 @@ type Server struct {
 	agentInfo     *store.AgentInfo
 	blocked       bool
 	version       string
+	forceChannel  bool
 	channelReady  bool
 }
 
 // NewServer creates a new MCP server
-func NewServer(version string) *Server {
-	return &Server{version: version}
+func NewServer(version string, forceChannel bool) *Server {
+	return &Server{version: version, forceChannel: forceChannel}
 }
 
 // Run starts the MCP server and runs until context is cancelled
@@ -74,7 +75,7 @@ Incoming messages from other agents arrive as <channel source="chanwire" event_t
 
 ## Important
 - If you see a "not registered" channel event, call chanwire_register_agent before sending messages.
-- Messages stream automatically only when the client declares experimental claude/channel support.`,
+- Messages stream automatically when this server was started with --channel, or when the client declares experimental claude/channel support.`,
 		Capabilities:       s.serverCapabilities(),
 		InitializedHandler: s.onInitialized,
 		Logger:             slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
@@ -145,12 +146,16 @@ func (s *Server) onInitialized(ctx context.Context, req *mcp.InitializedRequest)
 	s.log("client initialized")
 	s.setSession(req.Session)
 	s.setChannelReady(false)
-	if !supportsChannel(req.Session) {
+	if !s.channelAllowed(req.Session) {
 		s.log("client did not declare %s capability - not starting connect", channelCapabilityName)
 		return
 	}
 	s.setChannelReady(true)
-	s.log("client supports %s - starting connect", channelCapabilityName)
+	if s.forceChannel {
+		s.log("--channel set - starting connect without requiring %s capability", channelCapabilityName)
+	} else {
+		s.log("client supports %s - starting connect", channelCapabilityName)
+	}
 	s.startConnect(ctx)
 }
 
@@ -512,6 +517,10 @@ func supportsChannel(session *mcp.ServerSession) bool {
 	}
 	_, ok := params.Capabilities.Experimental[channelCapabilityName]
 	return ok
+}
+
+func (s *Server) channelAllowed(session *mcp.ServerSession) bool {
+	return s.forceChannel || supportsChannel(session)
 }
 
 func toolErrorResult(err error) *mcp.CallToolResult {
