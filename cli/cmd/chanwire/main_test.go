@@ -308,6 +308,35 @@ func TestMsgSend404ReturnsError(t *testing.T) {
 	}
 }
 
+func TestMsgSendSystemReturnsNoReplyError(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	t.Setenv("CHANWIRE_DIR", dir)
+	t.Setenv("CHANWIRE_ENDPOINT", srv.URL)
+
+	agentJSON := filepath.Join(dir, ".config", "chanwire", "agent.json")
+	writeAgentJSON(t, agentJSON, "alice", "tok", srv.URL)
+
+	_, _, err := runArgs("msg", "send", "--to_agent", "system", "--content", "hi")
+	if err == nil {
+		t.Fatal("expected error for system recipient, got nil")
+	}
+	for _, want := range []string{"cannot send to system", "noreply", "user's own communication channel"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("system send error should contain %q, got %q", want, err.Error())
+		}
+	}
+	if called {
+		t.Fatal("msg send should reject system before making an HTTP request")
+	}
+}
+
 func TestMsgSendJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

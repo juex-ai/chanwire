@@ -56,6 +56,7 @@ func WSConnect(s *store.Store, h *hub.Hub) app.HandlerFunc {
 						FromAgent: m.FromAgent,
 						Content:   m.Content,
 						SentAt:    m.CreatedAt,
+						NoReply:   isSystemMessage(m.FromAgent),
 					})
 				}
 				if err := wsConn.WriteFrame(proto.Frame{Type: "history_batch", Messages: batch}); err != nil {

@@ -422,6 +422,29 @@ func TestMsgSendUnknownAgent(t *testing.T) {
 	}
 }
 
+func TestMsgSendSystemAgentReturnsNoReplyError(t *testing.T) {
+	baseURL, cleanup := testServer(t)
+	defer cleanup()
+
+	tokenA := register(t, baseURL, "alice")
+
+	resp := doPost(t, baseURL+"/api/v1/msg/send", tokenA, proto.SendRequest{
+		ToAgent: "SYSTEM",
+		Content: "hello",
+	})
+	if resp.StatusCode != 400 {
+		resp.Body.Close()
+		t.Fatalf("msg/send system: want 400, got %d", resp.StatusCode)
+	}
+	var errResp proto.ErrorResponse
+	decodeBody(t, resp, &errResp)
+	for _, want := range []string{"cannot send to system", "noreply", "user's own communication channel"} {
+		if !strings.Contains(errResp.Error, want) {
+			t.Fatalf("msg/send system error should contain %q, got %q", want, errResp.Error)
+		}
+	}
+}
+
 // 6. WS connect: receives recent history as one batch, then realtime.
 func TestWSHistoryAndRealtime(t *testing.T) {
 	baseURL, cleanup := testServer(t)
@@ -551,6 +574,9 @@ func TestWebSystemSendAndMessagePagination(t *testing.T) {
 	if frame.Type != "realtime" || frame.FromAgent != "system" || frame.Content != "hello from dashboard" {
 		t.Fatalf("unexpected realtime frame: %+v", frame)
 	}
+	if !frame.NoReply {
+		t.Fatalf("system realtime frame should be marked noreply: %+v", frame)
+	}
 
 	resp = doGet(t, baseURL+"/api/v1/web/messages", "")
 	if resp.StatusCode != 200 {
@@ -564,6 +590,9 @@ func TestWebSystemSendAndMessagePagination(t *testing.T) {
 	got := messages.Messages[0]
 	if got.FromAgent != "system" || got.ToAgent != "bob" || got.Content != "hello from dashboard" {
 		t.Fatalf("unexpected web message: %+v", got)
+	}
+	if !got.NoReply {
+		t.Fatalf("web system message should be marked noreply: %+v", got)
 	}
 }
 

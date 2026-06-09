@@ -3,6 +3,7 @@ package client_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -161,6 +162,33 @@ func TestSend404(t *testing.T) {
 	}
 }
 
+func TestSendSystemAgentRejectedBeforeHTTP(t *testing.T) {
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	hc := client.NewHTTP(srv.URL, "test-token")
+	_, err := hc.Send("System", "hello")
+	if err == nil {
+		t.Fatal("expected error when sending to system, got nil")
+	}
+	var systemErr *client.ErrSystemAgent
+	if !errors.As(err, &systemErr) {
+		t.Fatalf("expected *ErrSystemAgent, got %T: %v", err, err)
+	}
+	for _, want := range []string{"cannot send to system", "noreply", "user's own communication channel"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("system send error should contain %q, got %q", want, err.Error())
+		}
+	}
+	if called {
+		t.Fatal("client should reject system sends before making an HTTP request")
+	}
+}
+
 // ── WebSocket integration test ────────────────────────────────────────────────
 
 var wsUpgrader = websocket.Upgrader{
@@ -186,11 +214,13 @@ func TestWSFrames(t *testing.T) {
 		FromAgent string `json:"from_agent,omitempty"`
 		Content   string `json:"content,omitempty"`
 		SentAt    *int64 `json:"sent_at,omitempty"`
+		NoReply   bool   `json:"noreply,omitempty"`
 		Messages  []struct {
 			MessageID *int64 `json:"message_id,omitempty"`
 			FromAgent string `json:"from_agent,omitempty"`
 			Content   string `json:"content,omitempty"`
 			SentAt    *int64 `json:"sent_at,omitempty"`
+			NoReply   bool   `json:"noreply,omitempty"`
 		} `json:"messages,omitempty"`
 	}
 
@@ -205,8 +235,10 @@ func TestWSFrames(t *testing.T) {
 			FromAgent string `json:"from_agent,omitempty"`
 			Content   string `json:"content,omitempty"`
 			SentAt    *int64 `json:"sent_at,omitempty"`
+			NoReply   bool   `json:"noreply,omitempty"`
 		}{
 			{MessageID: &id1, FromAgent: "alice", Content: "hello history", SentAt: &ts1},
+			{MessageID: &id2, FromAgent: "system", Content: "hello system history", SentAt: &ts2, NoReply: true},
 		}},
 		{Type: "realtime", MessageID: &id2, FromAgent: "bob", Content: "hello realtime", SentAt: &ts2},
 	}
@@ -247,8 +279,9 @@ func TestWSFrames(t *testing.T) {
 	t2 := time.Unix(ts2, 0).Local().Format("2006-01-02 15:04:05")
 
 	expected := []string{
-		"-- history batch (one-time review, 1 message) --",
+		"-- history batch (one-time review, 2 messages) --",
 		"[history]  from alice at " + t1 + ": hello history",
+		"[history]  from system (noreply: system messages cannot be replied to; if you need to contact the user, use the user's own communication channel) at " + t2 + ": hello system history",
 		"-- end history batch --",
 		"[realtime] from bob at " + t2 + ": hello realtime",
 	}
