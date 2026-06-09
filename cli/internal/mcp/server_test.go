@@ -14,7 +14,7 @@ func TestConnectionLifecycleSerializesConcurrentResetAndStop(t *testing.T) {
 	t.Setenv("CHANWIRE_DIR", t.TempDir())
 	t.Setenv("CHANWIRE_ENDPOINT", "http://127.0.0.1:1")
 
-	srv := NewServer("test")
+	srv := NewServer("test", false)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -49,6 +49,15 @@ func TestConnectionLifecycleSerializesConcurrentResetAndStop(t *testing.T) {
 
 	cancel()
 	srv.stopConnect()
+}
+
+func TestForceChannelAllowsMissingClientCapability(t *testing.T) {
+	if NewServer("test", false).channelAllowed(nil) {
+		t.Fatal("channel should not be allowed without capability or force flag")
+	}
+	if !NewServer("test", true).channelAllowed(nil) {
+		t.Fatal("forced channel flag should allow channel notifications without client capability")
+	}
 }
 
 func TestMessageTimeFormattingUsesLocalTimezone(t *testing.T) {

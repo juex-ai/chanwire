@@ -225,6 +225,61 @@ func TestMCPWithoutClientCapabilityDoesNotStream(t *testing.T) {
 	mcp.assertNoNotification("notifications/claude/channel", 500*time.Millisecond)
 }
 
+func TestMCPChannelFlagStreamsWithoutClientCapability(t *testing.T) {
+	endpoint := e2e.Endpoint()
+	bin := e2e.Binary(t)
+	suffix := e2e.UniqueSuffix()
+
+	observer := "mcp-observer-force-" + suffix
+	bob := "mcp-bob-force-" + suffix
+	message := "mcp forced channel should notify " + suffix
+
+	observerToken := e2e.RegisterAgent(t, endpoint, observer)
+	mcpDataDir := t.TempDir()
+
+	mcp := startMCPServer(t, bin, endpoint, mcpDataDir, "--channel")
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    map[string]any{},
+			"clientInfo": map[string]any{
+				"name":    "chanwire-e2e",
+				"version": "test",
+			},
+		},
+	})
+	initResp := mcp.waitResponse(1)
+	assertNoRPCError(t, initResp)
+	assertServerChannelCapability(t, initResp, true)
+
+	mcp.send(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+		"params":  map[string]any{},
+	})
+	notRegistered := mcp.waitNotification("notifications/claude/channel", func(params map[string]any) bool {
+		content, _ := params["content"].(string)
+		return strings.Contains(content, "agent not registered")
+	})
+	assertChannelEvent(t, notRegistered, "not_registered", "agent not registered")
+
+	callTool(t, mcp, 2, "chanwire_register_agent", map[string]any{"agent_name": bob})
+	registerResp := mcp.waitResponse(2)
+	assertNoRPCError(t, registerResp)
+	assertToolTextContains(t, registerResp, "registered: agent_name="+bob)
+
+	assertStderrContainsCountEventually(t, mcp, "[chanwire] starting ws connect", 1, time.Second)
+	e2e.SendMessage(t, endpoint, observerToken, bob, message, http.StatusOK)
+	msgNotification := mcp.waitNotificationWithin("notifications/claude/channel", 60*time.Second, func(params map[string]any) bool {
+		content, _ := params["content"].(string)
+		return strings.Contains(content, message)
+	})
+	assertChannelEvent(t, msgNotification, "message", message)
+}
+
 func TestMCPRecoversAfterExternalRegistration(t *testing.T) {
 	endpoint := e2e.Endpoint()
 	bin := e2e.Binary(t)
@@ -338,11 +393,11 @@ type stdioMCP struct {
 	backlog []rpcMessage
 }
 
-func startMCPServer(t *testing.T, bin, endpoint, dataDir string) *stdioMCP {
+func startMCPServer(t *testing.T, bin, endpoint, dataDir string, extraArgs ...string) *stdioMCP {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	args := []string{"mcp"}
+	args := append([]string{"mcp"}, extraArgs...)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Env = e2e.Env(endpoint, dataDir)
 
