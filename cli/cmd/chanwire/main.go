@@ -277,6 +277,10 @@ func msgSendCmd() *cobra.Command {
 			resp, err := hc.Send(toAgent, content)
 			if err != nil {
 				var unknownErr *client.ErrUnknownAgent
+				var systemErr *client.ErrSystemAgent
+				if errors.As(err, &systemErr) {
+					return err
+				}
 				if errors.As(err, &unknownErr) {
 					// Return a plain error so Cobra prints it and exits non-zero;
 					// don't call os.Exit directly from inside RunE.

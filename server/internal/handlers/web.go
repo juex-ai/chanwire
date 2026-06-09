@@ -213,6 +213,7 @@ func WebMsgSend(s *store.Store, h *hub.Hub) app.HandlerFunc {
 			FromAgent: msg.FromAgent,
 			Content:   msg.Content,
 			SentAt:    &sat,
+			NoReply:   isSystemMessage(msg.FromAgent),
 		})
 		webMsg := webMessage(msg)
 		h.BroadcastWeb(proto.WebFrame{Type: "message", Message: &webMsg})
@@ -302,6 +303,7 @@ func webMessage(msg *store.Message) proto.WebMessage {
 		Content:     msg.Content,
 		ContentHTML: renderMarkdownHTML(msg.Content),
 		SentAt:      msg.CreatedAt,
+		NoReply:     isSystemMessage(msg.FromAgent),
 	}
 }
 

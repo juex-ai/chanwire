@@ -46,6 +46,7 @@ type HistoryMessage struct {
 	FromAgent string `json:"from_agent"`
 	Content   string `json:"content"`
 	SentAt    int64  `json:"sent_at"`
+	NoReply   bool   `json:"noreply,omitempty"`
 }
 
 // Frame is a server-to-client WebSocket message.
@@ -56,6 +57,7 @@ type Frame struct {
 	FromAgent string           `json:"from_agent,omitempty"`
 	Content   string           `json:"content,omitempty"`
 	SentAt    *int64           `json:"sent_at,omitempty"`
+	NoReply   bool             `json:"noreply,omitempty"`
 	Messages  []HistoryMessage `json:"messages,omitempty"`
 }
 
@@ -67,6 +69,7 @@ type WebMessage struct {
 	Content     string `json:"content"`
 	ContentHTML string `json:"content_html,omitempty"`
 	SentAt      int64  `json:"sent_at"`
+	NoReply     bool   `json:"noreply,omitempty"`
 }
 
 // WebAgent is an online agent node in the public web console.

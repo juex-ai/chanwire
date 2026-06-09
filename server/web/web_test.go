@@ -65,6 +65,7 @@ func TestComposerBubbleInteractionContract(t *testing.T) {
 func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 	style := readIndexStyle(t)
 	script := readIndexScript(t)
+	html := readIndexHTML(t)
 
 	if !ruleDeclares(style, ".route-agent", "background:var(--agent-color)") {
 		t.Fatal("message route agents should render as colored chips")
@@ -102,6 +103,7 @@ func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 		"formatWhen(m.sent_at)",
 		"function formatWhen(sec)",
 		"new Date(sec*1000).toLocaleString()",
+		"m.noreply?'<span class=\"noreply\">noreply</span>':''",
 		"isExpanded",
 		"visible.has(id)",
 		"card.dataset.messageId",
@@ -112,6 +114,9 @@ func TestMessageCardsRenderMarkdownRouteChipsAndCollapse(t *testing.T) {
 		if !strings.Contains(script, token) {
 			t.Fatalf("web console script should include %q", token)
 		}
+	}
+	if !strings.Contains(html, ".noreply{border:2px solid var(--text)") {
+		t.Fatal("web console should style the noreply chip for system messages")
 	}
 	for _, stale := range []string{
 		"new Date(m.sent_at).toLocaleString()",

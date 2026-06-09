@@ -34,6 +34,10 @@ func MsgSend(s *store.Store, h *hub.Hub) app.HandlerFunc {
 			ctx.JSON(consts.StatusBadRequest, proto.ErrorResponse{Error: "content is required"})
 			return
 		}
+		if isSystemAgent(req.ToAgent) {
+			ctx.JSON(consts.StatusBadRequest, proto.ErrorResponse{Error: sendToSystemError()})
+			return
+		}
 
 		// Resolve to_agent by name.
 		toAgent, err := s.GetAgentByName(c, req.ToAgent)

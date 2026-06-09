@@ -265,6 +265,15 @@ func (s *Server) handleSendMsg(ctx context.Context, toAgent, content string) (*m
 	resp, err := hc.Send(toAgent, content)
 	if err != nil {
 		var unknownErr *client.ErrUnknownAgent
+		var systemErr *client.ErrSystemAgent
+		if errors.As(err, &systemErr) {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{
+					&mcp.TextContent{Text: fmt.Sprintf("error: %v", err)},
+				},
+				IsError: true,
+			}, nil, nil
+		}
 		if errors.As(err, &unknownErr) {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
@@ -529,13 +538,13 @@ func formatFrame(kind string, frame *client.Frame) string {
 	if kind == "realtime" {
 		label = "[realtime]"
 	}
-	return fmt.Sprintf("%s from %s at %s: %s", label, frame.FromAgent, safeFrameTS(frame.SentAt), frame.Content)
+	return fmt.Sprintf("%s from %s at %s: %s", label, client.DisplayFromAgent(frame.FromAgent, frame.NoReply), safeFrameTS(frame.SentAt), frame.Content)
 }
 
 func formatHistoryBatch(messages []client.HistoryMessage) string {
 	lines := []string{fmt.Sprintf("[history batch: one-time review, %d %s]", len(messages), pluralize("message", len(messages)))}
 	for _, msg := range messages {
-		lines = append(lines, fmt.Sprintf("[history]  from %s at %s: %s", msg.FromAgent, safeFrameTS(&msg.SentAt), msg.Content))
+		lines = append(lines, fmt.Sprintf("[history]  from %s at %s: %s", client.DisplayFromAgent(msg.FromAgent, msg.NoReply), safeFrameTS(&msg.SentAt), msg.Content))
 	}
 	return strings.Join(lines, "\n")
 }

@@ -20,6 +20,7 @@ type Frame struct {
 	FromAgent string           `json:"from_agent,omitempty"`
 	Content   string           `json:"content,omitempty"`
 	SentAt    *int64           `json:"sent_at,omitempty"`
+	NoReply   bool             `json:"noreply,omitempty"`
 	Messages  []HistoryMessage `json:"messages,omitempty"`
 }
 
@@ -29,6 +30,7 @@ type HistoryMessage struct {
 	FromAgent string `json:"from_agent,omitempty"`
 	Content   string `json:"content,omitempty"`
 	SentAt    int64  `json:"sent_at,omitempty"`
+	NoReply   bool   `json:"noreply,omitempty"`
 }
 
 // FrameHandler receives decoded WebSocket frames.
@@ -161,12 +163,20 @@ func printFrame(w io.Writer, f *Frame) {
 	case "history_batch":
 		fmt.Fprintf(w, "-- history batch (one-time review, %d %s) --\n", len(f.Messages), pluralize("message", len(f.Messages)))
 		for _, msg := range f.Messages {
-			fmt.Fprintf(w, "[history]  from %s at %s: %s\n", msg.FromAgent, formatTSValue(msg.SentAt), msg.Content)
+			fmt.Fprintf(w, "[history]  from %s at %s: %s\n", DisplayFromAgent(msg.FromAgent, msg.NoReply), formatTSValue(msg.SentAt), msg.Content)
 		}
 		fmt.Fprintln(w, "-- end history batch --")
 	case "realtime":
-		fmt.Fprintf(w, "[realtime] from %s at %s: %s\n", f.FromAgent, formatTS(f.SentAt), f.Content)
+		fmt.Fprintf(w, "[realtime] from %s at %s: %s\n", DisplayFromAgent(f.FromAgent, f.NoReply), formatTS(f.SentAt), f.Content)
 	}
+}
+
+// DisplayFromAgent returns the sender label used in agent-facing output.
+func DisplayFromAgent(fromAgent string, noReply bool) string {
+	if noReply || strings.EqualFold(fromAgent, SystemAgentName) {
+		return fmt.Sprintf("%s (%s)", fromAgent, SystemNoReplyHint)
+	}
+	return fromAgent
 }
 
 // formatTS converts unix seconds to "2006-01-02 15:04:05" in the client local timezone.

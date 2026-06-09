@@ -2,9 +2,12 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/juex-ai/chanwire/cli/internal/client"
 )
 
 func TestConnectionLifecycleSerializesConcurrentResetAndStop(t *testing.T) {
@@ -61,5 +64,30 @@ func TestMessageTimeFormattingUsesLocalTimezone(t *testing.T) {
 
 	if got := safeISO(sec); got != "2026-05-07T19:42:03+08:00" {
 		t.Fatalf("safeISO should format unix seconds in local time, got %q", got)
+	}
+}
+
+func TestSystemNoReplyFormatting(t *testing.T) {
+	sec := int64(1778154123)
+	frame := &client.Frame{
+		Type:      "realtime",
+		FromAgent: "SYSTEM",
+		Content:   "hello",
+		SentAt:    &sec,
+	}
+	got := formatFrame("realtime", frame)
+	for _, want := range []string{"from SYSTEM (noreply:", "system messages cannot be replied to", "user's own communication channel"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("system frame should contain %q, got %q", want, got)
+		}
+	}
+
+	batch := formatHistoryBatch([]client.HistoryMessage{{
+		FromAgent: "System",
+		Content:   "history",
+		SentAt:    sec,
+	}})
+	if !strings.Contains(batch, "from System (noreply:") {
+		t.Fatalf("system history should include noreply hint, got %q", batch)
 	}
 }

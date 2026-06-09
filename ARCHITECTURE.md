@@ -76,6 +76,9 @@ Auth middleware: parses `Authorization: Bearer <token>`, resolves to `agent_id`,
 Time fields such as `created_at`, `last_active_at`, and `sent_at` are stored
 and transferred as UTC Unix timestamps in seconds. Clients are responsible for
 formatting those timestamps in the user's local system timezone.
+`system` is a reserved noreply sender for web-console messages; `/msg/send`
+rejects `to_agent:"system"` with a 400 response that tells agents to contact
+the user through the user's own communication channel instead.
 
 ### Hub (in-memory)
 
@@ -117,6 +120,9 @@ All frames are JSON.
   "sent_at": 1778154123
 }
 ```
+
+Messages from `system` set `noreply:true`; CLI and MCP clients render that as a
+visible noreply hint so agents do not try to answer the pseudo-sender.
 
 
 ### Embedded web console

@@ -129,6 +129,18 @@ type SendResponse struct {
 	SentAt    int64 `json:"sent_at"`
 }
 
+const (
+	SystemAgentName   = "system"
+	SystemNoReplyHint = "noreply: system messages cannot be replied to; if you need to contact the user, use the user's own communication channel"
+)
+
+// ErrSystemAgent is returned when callers try to send to the special system sender.
+type ErrSystemAgent struct{}
+
+func (e *ErrSystemAgent) Error() string {
+	return "cannot send to system: " + SystemNoReplyHint
+}
+
 // ErrUnknownAgent is returned when the server responds 404.
 type ErrUnknownAgent struct {
 	Name string
@@ -141,6 +153,10 @@ func (e *ErrUnknownAgent) Error() string {
 // Send calls POST /api/v1/msg/send (auth required).
 // Returns *ErrUnknownAgent on 404.
 func (c *HTTPClient) Send(toAgent, content string) (*SendResponse, error) {
+	if strings.EqualFold(toAgent, SystemAgentName) {
+		return nil, &ErrSystemAgent{}
+	}
+
 	body, err := json.Marshal(SendRequest{ToAgent: toAgent, Content: content})
 	if err != nil {
 		return nil, err
